@@ -18,15 +18,19 @@
 4. Copy the `MONGO_URL` connection string (you'll need this)
 
 ## Step 4: Configure Environment Variables
-Click on your service → "Variables" tab → Add these:
+Click on your service → "Variables" tab → Add these (choose WEB or MOBILE redirect as needed):
 
 ```
 NODE_ENV=production
 PORT=3000
 MONGODB_URI=${{MongoDB.MONGO_URL}}
-SPOTIFY_CLIENT_ID=<your_spotify_client_id>
-SPOTIFY_CLIENT_SECRET=<your_spotify_client_secret>
-SPOTIFY_REDIRECT_URI=https://your-app.railway.app/auth/callback
+SPOTIFY_CLIENT_ID=30d78a30cd9f435eba6edbaa4a427041
+SPOTIFY_CLIENT_SECRET=<optional_if_using_web_confidential_flow>
+# Dual redirects (you can set both)
+SPOTIFY_REDIRECT_URI_MOBILE=ratesangeet://callback
+SPOTIFY_REDIRECT_URI_WEB=https://your-railway-url.railway.app/api/auth/callback
+# Backward-compat default (used if specific target not provided)
+SPOTIFY_REDIRECT_URI=https://your-railway-url.railway.app/api/auth/callback
 SESSION_SECRET=<generate_random_32_char_string>
 CLOUD_ENABLE_SCROBBLES=false
 ARCHIVE_RETENTION_DAYS=90
@@ -47,7 +51,9 @@ ARCHIVE_KEEP_RECENT=200
 ## Step 6: Update Spotify App Settings
 1. Go to https://developer.spotify.com/dashboard
 2. Edit your Spotify app
-3. Add Redirect URI: `https://your-railway-url.railway.app/auth/callback`
+3. Add Redirect URIs:
+	- Mobile: `ratesangeet://callback`
+	- Web: `https://your-railway-url.railway.app/api/auth/callback`
 4. Save changes
 
 ## Step 7: Update Mobile App Configuration

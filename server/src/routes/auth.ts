@@ -51,6 +51,8 @@ const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 // Initiate Spotify OAuth
 router.get('/login', (req: Request, res: Response) => {
+  // target=mobile|web chooses redirect; default to web/server if unspecified
+  const target = (req.query.target as string) || 'web';
   const scope = [
     'user-read-private',
     'user-read-email',
@@ -59,19 +61,25 @@ router.get('/login', (req: Request, res: Response) => {
     'user-read-currently-playing',
     'user-read-playback-state',
   ].join(' ');
+
+  // Select appropriate redirect URI
+  const redirectUri = target === 'mobile'
+    ? (process.env.SPOTIFY_REDIRECT_URI_MOBILE || process.env.SPOTIFY_REDIRECT_URI || '')
+    : (process.env.SPOTIFY_REDIRECT_URI_WEB || process.env.SPOTIFY_REDIRECT_URI || '');
+
   const params = new URLSearchParams({
     client_id: process.env.SPOTIFY_CLIENT_ID || '',
     response_type: 'code',
-    redirect_uri: process.env.SPOTIFY_REDIRECT_URI || '',
+    redirect_uri: redirectUri,
     scope,
   });
 
-  res.json({ url: `${SPOTIFY_AUTH_URL}?${params.toString()}` });
+  res.json({ url: `${SPOTIFY_AUTH_URL}?${params.toString()}`, target, redirectUri });
 });
 
 // Spotify OAuth Callback
 router.post('/callback', async (req: Request, res: Response) => {
-  const { code, redirectUri, codeVerifier } = req.body as { code?: string; redirectUri?: string; codeVerifier?: string };
+  const { code, redirectUri, codeVerifier, target } = req.body as { code?: string; redirectUri?: string; codeVerifier?: string; target?: string };
 
   console.log('📱 Received callback request with code:', code?.substring(0, 20) + '...');
   console.log('🔑 Using redirect URI (client or env):', redirectUri || process.env.SPOTIFY_REDIRECT_URI);
@@ -86,7 +94,15 @@ router.post('/callback', async (req: Request, res: Response) => {
     const tokenParams = new URLSearchParams();
     tokenParams.set('grant_type', 'authorization_code');
     tokenParams.set('code', code);
-    tokenParams.set('redirect_uri', (redirectUri || process.env.SPOTIFY_REDIRECT_URI || ''));
+    // Choose server-side redirect if client did not explicitly supply
+    if (!redirectUri) {
+      const chosen = target === 'mobile'
+        ? (process.env.SPOTIFY_REDIRECT_URI_MOBILE || process.env.SPOTIFY_REDIRECT_URI)
+        : (process.env.SPOTIFY_REDIRECT_URI_WEB || process.env.SPOTIFY_REDIRECT_URI);
+      tokenParams.set('redirect_uri', chosen || '');
+    } else {
+      tokenParams.set('redirect_uri', redirectUri);
+    }
 
     if (codeVerifier) {
       // PKCE exchange without client secret (public client)

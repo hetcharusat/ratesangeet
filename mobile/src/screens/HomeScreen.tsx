@@ -231,6 +231,22 @@ const HomeScreen = () => {
         </View>
       )}
 
+      {/* Album Completion Sparkline */}
+      {listeningStats?.albumCompletions && listeningStats.albumCompletions.dailyCompletionTrend.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>Album Completions (30d)</Text>
+          <View style={styles.sparklineRow}>
+            {listeningStats.albumCompletions.dailyCompletionTrend.map((pt) => (
+              <View key={pt.date} style={[styles.sparkBar, { height: Math.min(50, pt.count * 8) }]} />
+            ))}
+          </View>
+          <Text style={styles.sparklineMeta}>
+            {listeningStats.albumCompletions.totalCompletedAlbums} albums completed · {listeningStats.albumCompletions.totalCompletedAlbumPlays || 0} total full plays · Last 7d: {listeningStats.albumCompletions.last7DaysCompletions || 0}
+            {listeningStats.albumCompletions.currentStreak && listeningStats.albumCompletions.currentStreak > 1 ? ` · 🔥 ${listeningStats.albumCompletions.currentStreak}-day streak` : ''}
+          </Text>
+        </View>
+      )}
+
       {(currentTrack || lastScrobble) && (
         <View style={styles.nowPlayingCard}>
           <View style={styles.nowPlayingHeader}>
@@ -331,6 +347,23 @@ const HomeScreen = () => {
         </View>
       )}
 
+      {/* Recent Album Completions List */}
+      {listeningStats?.albumCompletions?.recentCompletions?.length ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Completions</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
+            {listeningStats.albumCompletions.recentCompletions.slice(0,10).map((c, idx) => (
+              <View key={idx} style={styles.completionPill}>
+                {c.albumArt ? <Image source={{ uri: c.albumArt }} style={styles.completionArt} /> : <View style={[styles.completionArt, styles.completionArtPlaceholder]} />}
+                <Text style={styles.completionName} numberOfLines={1}>{c.albumName}</Text>
+                <Text style={styles.completionArtist} numberOfLines={1}>{c.artistName}</Text>
+                <Text style={styles.completionMeta} numberOfLines={1}>{c.completedPlays || 1}× full play</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       {listeningStats && listeningStats.topArtists && listeningStats.topArtists.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle} numberOfLines={1}>Top Artists</Text>
@@ -397,6 +430,64 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  // Sparkline styles
+  sparklineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+    marginTop: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+  },
+  sparkBar: {
+    width: 6,
+    backgroundColor: Colors.primary,
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+  },
+  sparklineMeta: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  // Recent completions pills
+  completionPill: {
+    width: 120,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    padding: 10,
+    marginRight: 10,
+    alignItems: 'center',
+  },
+  completionArt: {
+    width: 80,
+    height: 80,
+    borderRadius: 6,
+    marginBottom: 6,
+    backgroundColor: Colors.placeholder,
+  },
+  completionArtPlaceholder: {
+    backgroundColor: Colors.placeholder,
+  },
+  completionName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  completionArtist: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  completionMeta: {
+    fontSize: 11,
+    color: Colors.primary,
+    marginTop: 4,
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',

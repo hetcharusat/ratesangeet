@@ -11,6 +11,7 @@ import musicRoutes from './routes/music.js';
 import reviewRoutes from './routes/reviews.js';
 import statsRoutes from './routes/stats.js';
 import usersRoutes from './routes/users.js';
+import discoverRoutes from './routes/discover.js';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -54,6 +55,7 @@ app.use('/api/music', musicRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/discover', discoverRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });

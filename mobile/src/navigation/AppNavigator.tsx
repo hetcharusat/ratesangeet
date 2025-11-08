@@ -10,7 +10,8 @@ import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 // import ExploreScreen from '../screens/ExploreScreen';
-import ActivityScreen from '../screens/ActivityScreen';
+// ActivityScreen retained (legacy); DiscoveryScreen replaces tab label.
+import DiscoveryScreen from '../screens/DiscoveryScreen';
 import AddReviewScreen from '../screens/AddReviewScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -78,11 +79,11 @@ const MainTabs = () => {
         }}
       />
       <Tab.Screen
-        name="Activity"
-        component={ActivityScreen}
+        name="Discovery"
+        component={DiscoveryScreen}
         options={{
-          tabBarLabel: 'Activity',
-          tabBarIcon: () => <Text style={{ fontSize: 18 }}>👥</Text>,
+          tabBarLabel: 'Discover',
+          tabBarIcon: () => <Text style={{ fontSize: 18 }}>✨</Text>,
         }}
       />
       <Tab.Screen

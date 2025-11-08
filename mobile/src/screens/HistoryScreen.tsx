@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, RefreshControl, Linking, Alert, ActivityIndicator } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { getUserScrobbles, Scrobble, getAlbumDetails } from '../services/api';
+import { getUserScrobbles, Scrobble, getAlbumDetails, getAlbumStats, AlbumStats as CloudAlbumStats } from '../services/api';
 import { useNavigation } from '@react-navigation/native';
 
 type TabType = 'tracks' | 'albums';
@@ -15,7 +15,8 @@ interface CompletedAlbum {
   totalTracks: number;
   listenedTracks: number;
   completionPercent: number;
-  totalPlays: number;
+  totalPlays: number; // raw scrobbles
+  completedPlays?: number; // full album completions
   lastPlayed: string;
 }
 
@@ -48,33 +49,34 @@ const HistoryScreen = () => {
           artistName: string;
           lastPlayed: string;
           albumId?: string;
+          albumName?: string;
         }>();
 
+        // ROOT FIX: Use stable albumKey (albumId || artistName+"||"+albumName) instead of just albumName
+        // to avoid collisions for different artists with identically named albums (e.g., "Greatest Hits").
         scrobblesData.forEach((scrobble) => {
           if (scrobble.albumName) {
-            const key = scrobble.albumName;
-            if (!albumMap.has(key)) {
-              albumMap.set(key, {
+            const albumKey = scrobble.albumId || `${scrobble.artistName}||${scrobble.albumName}`;
+            if (!albumMap.has(albumKey)) {
+              albumMap.set(albumKey, {
                 uniqueTracks: new Set(),
                 totalScrobbles: 0,
                 albumArt: scrobble.albumArt || '',
                 artistName: scrobble.artistName,
                 lastPlayed: scrobble.playedAt,
                 albumId: scrobble.albumId,
+                albumName: scrobble.albumName,
               });
             }
-            const album = albumMap.get(key)!;
-            
+            const album = albumMap.get(albumKey)!;
             // Update albumId if this scrobble has one and we don't have one yet
             if (scrobble.albumId && !album.albumId) {
               album.albumId = scrobble.albumId;
             }
-            
             // Track unique tracks listened
             album.uniqueTracks.add(scrobble.spotifyId);
             // Count total scrobbles (plays)
             album.totalScrobbles++;
-            
             if (new Date(scrobble.playedAt) > new Date(album.lastPlayed)) {
               album.lastPlayed = scrobble.playedAt;
             }
@@ -85,12 +87,13 @@ const HistoryScreen = () => {
         const completed: CompletedAlbum[] = [];
         
         // Process albums in batches to avoid overwhelming the API
-        const albumEntries = Array.from(albumMap.entries());
+  const albumEntries = Array.from(albumMap.entries());
         const BATCH_SIZE = 5;
         
         for (let i = 0; i < albumEntries.length; i += BATCH_SIZE) {
           const batch = albumEntries.slice(i, i + BATCH_SIZE);
-          const batchPromises = batch.map(async ([albumName, data]) => {
+          const batchPromises = batch.map(async ([albumKey, data]) => {
+            const albumName = (data as any).albumName || 'Unknown Album';
             // Default: if we can't get Spotify data, use 0 (will filter out album)
             let totalTracks = 0;
             
@@ -136,10 +139,11 @@ const HistoryScreen = () => {
                 artistName: data.artistName,
                 albumArt: data.albumArt,
                 albumId: data.albumId,
-                totalTracks, // Real album size from Spotify
-                listenedTracks, // Unique tracks user listened to
-                completionPercent, // listenedTracks / totalTracks * 100
-                totalPlays: data.totalScrobbles, // Total scrobbles (can be > listenedTracks if replays)
+                totalTracks,
+                listenedTracks,
+                completionPercent,
+                totalPlays: data.totalScrobbles,
+                completedPlays: undefined,
                 lastPlayed: data.lastPlayed,
               };
             }
@@ -171,8 +175,19 @@ const HistoryScreen = () => {
           return new Date(b.lastPlayed).getTime() - new Date(a.lastPlayed).getTime();
         });
 
-        setAllAlbums(completed);
-        setFilteredAlbums(completed); // Initially show all
+        // Hydrate completedPlays from cloud AlbumStats (fast summary) if available
+        let cloudStats: CloudAlbumStats[] = [];
+        try {
+          if (user?.id) {
+            cloudStats = await getAlbumStats(user.id, 200);
+          }
+        } catch {}
+        const merged = completed.map(c => {
+          const match = cloudStats.find(s => s.albumId === c.albumId);
+          return match ? { ...c, completedPlays: match.completedPlays } : c;
+        });
+        setAllAlbums(merged);
+        setFilteredAlbums(merged); // Initially show all
       }
     } catch (error) {
       console.error('Error loading history:', error);
@@ -337,7 +352,7 @@ const HistoryScreen = () => {
         </Text>
         <View style={styles.albumStats}>
           <Text style={styles.albumStat}>
-            🎵 {item.listenedTracks}/{item.totalTracks} tracks • 🔁 {item.totalPlays} plays
+            🎵 {item.listenedTracks}/{item.totalTracks} tracks • ✅ {item.completedPlays ?? 0} full plays • 🔁 {item.totalPlays} scrobbles
           </Text>
         </View>
         <Text style={styles.albumDate}>

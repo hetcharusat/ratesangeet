@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import Scrobble from '../models/Scrobble.js';
 import UserStatsSummary from '../models/UserStatsSummary.js';
+import AlbumStats from '../models/AlbumStats.js';
+import CompletionEvent from '../models/CompletionEvent.js';
 import User from '../models/User.js';
 
 const router = Router();
@@ -408,6 +411,90 @@ router.post('/scrobble', async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
+    // Update AlbumStats: playCount and completion metrics
+    try {
+      const albumId: string | undefined = item.album?.id;
+      const albumNameSafe: string = albumName || 'Unknown Album';
+      const albumKey: string = albumId || albumNameSafe;
+
+      // 1) Upsert base stats and increment playCount
+      const stats = await AlbumStats.findOneAndUpdate(
+        { userId: String(userId), albumKey },
+        {
+          $setOnInsert: {
+            albumId,
+            albumKey,
+            albumName: albumNameSafe,
+            artistName,
+            albumArt,
+            totalTracks: undefined,
+            completedPlays: 0,
+          },
+          $set: { lastPlayedAt: playedAt, albumArt, artistName, albumName: albumNameSafe },
+          $inc: { playCount: 1 },
+        },
+        { upsert: true, new: true }
+      );
+
+      // 2) Ensure totalTracks exists (one-time fetch) if albumId present
+      let totalTracks = stats.totalTracks;
+      if (!totalTracks && albumId) {
+        try {
+          const albumResp = await axios.get(`https://api.spotify.com/v1/albums/${albumId}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          totalTracks = albumResp.data?.total_tracks || albumResp.data?.tracks?.total || 0;
+          if (totalTracks && totalTracks > 0) {
+            await AlbumStats.updateOne(
+              { _id: stats._id },
+              { $set: { totalTracks } }
+            );
+          }
+        } catch {}
+      }
+
+      // 3) If we know totalTracks, update per-cycle progress to count multiple full plays.
+      if (totalTracks && totalTracks > 0) {
+        // Reload fresh snapshot to get currentCycleUniqueTrackIds
+        const fresh = await AlbumStats.findById(stats._id).select('currentCycleUniqueTrackIds completedPlays').lean();
+        const seen: string[] = Array.isArray(fresh?.currentCycleUniqueTrackIds) ? fresh!.currentCycleUniqueTrackIds : [];
+        const already = seen.includes(item.id);
+        if (!already) {
+          seen.push(item.id);
+        }
+        if (seen.length >= totalTracks) {
+          // Completion achieved for this cycle
+          await AlbumStats.updateOne(
+            { _id: stats._id },
+            {
+              $inc: { completedPlays: 1 },
+              $set: { lastCompletedAt: playedAt, currentCycleUniqueTrackIds: [] },
+            }
+          );
+          // Emit a completion event for time-series analytics
+          try {
+            await CompletionEvent.create({
+              userId: String(userId),
+              albumId,
+              albumKey,
+              albumName: albumNameSafe,
+              artistName,
+              albumArt,
+              completedAt: playedAt,
+            });
+          } catch {}
+        } else if (!already) {
+          // Persist partial progress for the current cycle
+          await AlbumStats.updateOne(
+            { _id: stats._id },
+            { $set: { currentCycleUniqueTrackIds: seen } }
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('[SCROBBLE] AlbumStats update skipped:', (e as any)?.message || e);
+    }
+
     return res.json({ scrobbled: true, scrobble });
   } catch (error: any) {
     console.error('Error scrobbling track:', error.response?.data || error.message);
@@ -637,6 +724,62 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       }
     }
 
+    // Derive album completion sparkline from CompletionEvent (accurate per-completion events)
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const completionEvents = await CompletionEvent.find({ userId: String(userId), completedAt: { $gte: since } })
+      .select('albumName artistName albumArt completedAt')
+      .sort({ completedAt: -1 })
+      .lean();
+    const albumStatsDocs = await AlbumStats.find({ userId: String(userId), completedPlays: { $gt: 0 } })
+      .select('albumName artistName albumArt completedPlays lastCompletedAt')
+      .sort({ lastCompletedAt: -1 })
+      .limit(50)
+      .lean();
+
+    // Build daily trend for last 30 days
+    const today = new Date();
+    const dayBuckets: Record<string, number> = {};
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      dayBuckets[key] = 0;
+    }
+    completionEvents.forEach(e => {
+      const key = new Date(e.completedAt).toISOString().slice(0, 10);
+      if (dayBuckets[key] !== undefined) dayBuckets[key] += 1;
+    });
+    const dailyCompletionTrend = Object.entries(dayBuckets)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([date, count]) => ({ date, count }));
+
+    const totalCompletedAlbumPlays = albumStatsDocs.reduce((sum, s: any) => sum + (s.completedPlays || 0), 0);
+    const last7DaysCompletions = dailyCompletionTrend.slice(-7).reduce((a,b)=>a+b.count,0);
+
+    // Calculate current completion streak (consecutive days with at least 1 completion, ending today)
+    let currentStreak = 0;
+    const sortedDays = dailyCompletionTrend.slice().reverse(); // Most recent first
+    for (const day of sortedDays) {
+      if (day.count > 0) {
+        currentStreak++;
+      } else {
+        break; // Streak broken
+      }
+    }
+
+    const albumCompletions = {
+      totalCompletedAlbums: albumStatsDocs.length,
+      totalCompletedAlbumPlays,
+      recentCompletions: completionEvents.slice(0, 20).map(e => ({
+        albumName: e.albumName,
+        artistName: e.artistName,
+        albumArt: e.albumArt,
+        lastCompletedAt: e.completedAt,
+      })),
+      dailyCompletionTrend,
+      last7DaysCompletions,
+      currentStreak,
+    };
+
     const responseData = {
       totalMinutes: Math.round(totalMinutes),
       totalScrobbles: scrobbles.length,
@@ -645,6 +788,7 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       topSingles,
       topGenres,
       topArtists,
+      albumCompletions,
     };
 
     // Cache the result (store latest scrobble timestamp for freshness invalidation)
@@ -652,6 +796,17 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
     
     const totalTime = Date.now() - overallStart;
     console.log(`[LISTENING STATS] ✅ Total request time: ${totalTime}ms`);
+
+    // Generate ETag for this response content
+    const etag = `"${crypto.createHash('md5').update(JSON.stringify(responseData)).digest('hex')}"`;
+    res.setHeader('ETag', etag);
+
+    // Check if client has cached version (If-None-Match header)
+    const clientEtag = req.headers['if-none-match'];
+    if (clientEtag === etag) {
+      console.log(`[LISTENING STATS] ETag match - returning 304 Not Modified`);
+      return res.status(304).end();
+    }
 
     const ageMs = 0;
     res.setHeader('X-Cache', cacheHit ? 'HIT' : 'MISS');

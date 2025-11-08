@@ -51,5 +51,7 @@ const reviewSchema = new Schema<IReview>({
 // Index for faster queries
 reviewSchema.index({ userId: 1, createdAt: -1 });
 reviewSchema.index({ spotifyId: 1, userId: 1 });
+// Global public review feed index
+reviewSchema.index({ isPublic: 1, createdAt: -1 });
 
 export default mongoose.model<IReview>('Review', reviewSchema);

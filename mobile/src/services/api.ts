@@ -270,6 +270,20 @@ export interface ListeningStats {
     artist: string;
     count: number;
   }>;
+  albumCompletions?: {
+    totalCompletedAlbums: number;
+    totalCompletedAlbumPlays?: number;
+    recentCompletions: Array<{
+      albumName?: string;
+      artistName?: string;
+      albumArt?: string;
+      completedPlays?: number;
+      lastCompletedAt?: string;
+    }>;
+    dailyCompletionTrend: Array<{ date: string; count: number }>;
+    last7DaysCompletions?: number;
+    currentStreak?: number;
+  };
 }
 
 export const getListeningStats = async (
@@ -416,6 +430,140 @@ export const updateFavorites = async (
 
 export default api;
 
+// ===== Discovery Endpoint =====
+export interface DiscoveryPayload {
+  // === PERSONALIZED SECTIONS ===
+  madeForYou?: {
+    title: string;
+    description: string;
+    playlists: Array<{
+      playlistId: string;
+      playlistName: string;
+      description: string;
+      coverArt?: string;
+      owner: string;
+      totalTracks: number;
+      spotifyUri: string;
+      spotifyUrl: string;
+    }>;
+  };
+  recommendations?: {
+    title: string;
+    description: string;
+    tracks: Array<{
+      trackId: string;
+      trackName: string;
+      artistName: string;
+      albumName: string;
+      albumId: string;
+      albumArt?: string;
+      previewUrl?: string;
+      spotifyUri: string;
+      spotifyUrl: string;
+      popularity: number;
+    }>;
+  };
+  newReleases?: {
+    title: string;
+    description: string;
+    albums: Array<{
+      albumId: string;
+      albumName: string;
+      artistName: string;
+      albumArt?: string;
+      releaseDate: string;
+      totalTracks: number;
+      spotifyUri: string;
+      spotifyUrl: string;
+    }>;
+  };
+  
+  // === GLOBAL TRENDING SECTIONS ===
+  trendingAlbums?: {
+    title: string;
+    description: string;
+    albums: Array<{
+      rank: number;
+      albumId: string;
+      albumName: string;
+      artistName: string;
+      albumArt?: string;
+      releaseDate: string;
+      totalTracks: number;
+      popularity?: number;
+      spotifyUri: string;
+      spotifyUrl: string;
+    }>;
+  };
+  trendingTracks?: {
+    title: string;
+    description: string;
+    tracks: Array<{
+      rank: number;
+      trackId: string;
+      trackName: string;
+      artistName: string;
+      albumName: string;
+      albumId: string;
+      albumArt?: string;
+      previewUrl?: string;
+      spotifyUri: string;
+      spotifyUrl: string;
+      popularity: number;
+    }>;
+  };
+  viral50?: {
+    title: string;
+    description: string;
+    tracks: Array<{
+      rank: number;
+      trackId: string;
+      trackName: string;
+      artistName: string;
+      albumName: string;
+      albumId: string;
+      albumArt?: string;
+      previewUrl?: string;
+      spotifyUri: string;
+      spotifyUrl: string;
+      popularity: number;
+    }>;
+  };
+  
+  // === OTHER SECTIONS ===
+  featuredPlaylists?: {
+    title: string;
+    description: string;
+    playlists: Array<{
+      playlistId: string;
+      playlistName: string;
+      description: string;
+      coverArt?: string;
+      owner: string;
+      totalTracks: number;
+      spotifyUri: string;
+      spotifyUrl: string;
+    }>;
+  };
+  communityReviews?: {
+    title: string;
+    description: string;
+    reviews: Review[];
+  };
+  
+  generatedAt: string;
+  region?: string;
+  source?: string;
+  cached?: boolean;
+  cacheAge?: number;
+}
+
+export const getDiscoveryData = async (accessToken?: string): Promise<DiscoveryPayload> => {
+  const params = accessToken ? { accessToken } : {};
+  const response = await api.get('/discover', { params });
+  return response.data as DiscoveryPayload;
+};
+
 // ===== Hybrid storage stats (album summaries) =====
 export type AlbumStats = {
   userId: string;
@@ -425,6 +573,9 @@ export type AlbumStats = {
   albumArt?: string;
   playCount: number;
   lastPlayedAt?: string;
+  totalTracks?: number;
+  completedPlays?: number;
+  lastCompletedAt?: string;
 };
 
 export const upsertAlbumStatsBatch = async (

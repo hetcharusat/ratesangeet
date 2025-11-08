@@ -180,7 +180,8 @@ router.delete('/:commentId', async (req: Request, res: Response) => {
     const deleteRecursive = async (parentId: string) => {
       const replies = await ReviewComment.find({ parentId });
       for (const reply of replies) {
-        await deleteRecursive(reply._id.toString());
+        const replyId = (reply._id as mongoose.Types.ObjectId).toString();
+        await deleteRecursive(replyId);
         await ReviewComment.findByIdAndDelete(reply._id);
       }
     };

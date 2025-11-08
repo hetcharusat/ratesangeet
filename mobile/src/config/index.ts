@@ -11,10 +11,9 @@ const getDefaultApiUrl = () => {
     return process.env.EXPO_PUBLIC_API_URL as string;
   }
 
-  // 2. Production fallback: If building a beta APK and env var not injected, use Railway placeholder.
-  // Replace YOUR_RAILWAY_DOMAIN below after first deploy (e.g. ratesangeet-production.up.railway.app)
+  // 2. Production fallback: If building a beta APK and env var not injected, use Render domain.
   if (process.env.NODE_ENV === 'production') {
-    return 'https://YOUR_RAILWAY_DOMAIN/api';
+    return 'https://ratesangeet.onrender.com/api';
   }
 
   // 3. Development heuristics (local network / simulator / web dev)

@@ -11,8 +11,23 @@ router.get('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { viewerId } = req.query as { viewerId?: string };
 
-  const user = await User.findById(id).select('_id spotifyId displayName email profileImage followers following username favAlbums favTracks');
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    // ROOT FIX: Validate userId before querying
+    if (!id || id === 'undefined' || id === 'null') {
+      console.log('[GET /users/:id] Invalid user ID:', id);
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('[GET /users/:id] Invalid MongoDB ObjectId:', id);
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const user = await User.findById(id).select('_id spotifyId displayName email profileImage followers following username favAlbums favTracks');
+    if (!user) {
+      console.log('[GET /users/:id] User not found:', id);
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     const followersCount = user.followers?.length || 0;
     const followingCount = user.following?.length || 0;

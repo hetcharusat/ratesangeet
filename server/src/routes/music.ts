@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
+import mongoose from 'mongoose';
 import Scrobble from '../models/Scrobble.js';
 import UserStatsSummary from '../models/UserStatsSummary.js';
+import User from '../models/User.js';
 
 const router = Router();
 const CLOUD_ENABLE_SCROBBLES = (process.env.CLOUD_ENABLE_SCROBBLES ?? 'true') !== 'false';
@@ -260,6 +262,45 @@ router.post('/scrobble', async (req: Request, res: Response) => {
 
   if (!accessToken || !userId) {
     return res.status(400).json({ error: 'Access token and userId required' });
+  }
+
+  // ROOT FIX: Ensure user exists BEFORE allowing scrobble so we never end up with
+  // scrobbles referencing a missing user document. If it's missing, attempt to
+  // reconstruct minimal User from Spotify /me. If that fails, instruct client to re-auth.
+  try {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid userId format' });
+    }
+    let userDoc = await User.findById(userId).select('_id spotifyId displayName username');
+    if (!userDoc) {
+      // Attempt recovery using Spotify profile
+      try {
+        const meResp = await axios.get('https://api.spotify.com/v1/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const sp = meResp.data;
+        // Generate username if needed
+        const base = (sp.display_name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
+        let candidate = base; let suffix = 0;
+        while (await User.findOne({ username: candidate })) { suffix++; candidate = `${base}${suffix}`; }
+        userDoc = await User.create({
+          _id: userId, // preserve existing scrobble references
+          spotifyId: sp.id,
+          displayName: sp.display_name,
+          email: sp.email || 'unknown@example.com',
+          accessToken,
+          refreshToken: '',
+          profileImage: sp.images?.[0]?.url,
+          username: candidate,
+        });
+        console.log('[SCROBBLE] ✅ Auto-created missing user before scrobble', userId);
+      } catch (e: any) {
+        console.error('[SCROBBLE] ❌ Failed auto-create user', e.response?.data || e.message);
+        return res.status(409).json({ error: 'User missing and could not be recovered. Please re-login.' });
+      }
+    }
+  } catch (userCheckErr: any) {
+    return res.status(500).json({ error: 'User validation failed', details: userCheckErr.message });
   }
 
   try {

@@ -27,22 +27,33 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
   const isSelf = !!user?.id && user?.id === resolvedUserId;
 
   const loadProfile = async () => {
+    // ROOT FIX: Don't attempt to load profile if no user ID is available
     if (!resolvedUserId) {
+      console.log('[ProfileScreen] No userId available, skipping profile load');
       setLoading(false);
       return;
     }
     try {
+      console.log('[ProfileScreen] Loading profile for user:', resolvedUserId);
       setLoading(true);
       const data = await getUserProfile(resolvedUserId, user?.id);
       setProfile(data);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to load profile');
+      console.log('[ProfileScreen] Profile loaded successfully');
+    } catch (e: any) {
+      console.error('[ProfileScreen] Failed to load profile:', e?.response?.status, e?.response?.data || e?.message);
+      Alert.alert('Error', `Failed to load profile: ${e?.response?.data?.error || e?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
+  // ROOT FIX: Guard against loading before user ID is available
   useEffect(() => {
+    if (!resolvedUserId) {
+      console.log('[ProfileScreen] Skipping load: no user ID available');
+      setLoading(false); // Stop loading spinner if we're waiting for auth
+      return;
+    }
     loadProfile();
   }, [resolvedUserId]);
 
@@ -181,10 +192,22 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
     );
   }
 
+  // ROOT FIX: Show different message if not logged in vs profile not found
   if (!profile) {
+    const isNotLoggedIn = !resolvedUserId && !route.params.userId;
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text style={styles.emptyText}>Profile not found</Text>
+        <Text style={styles.emptyText}>
+          {isNotLoggedIn ? 'Please log in to view your profile' : 'Profile not found'}
+        </Text>
+        {isNotLoggedIn && (
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => navigation.navigate('Login' as never)}
+          >
+            <Text style={styles.loginButtonText}>Go to Login</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -528,6 +551,18 @@ const styles = StyleSheet.create({
   reviewTitle: { color: Colors.textPrimary, fontWeight: '700', fontSize: 15 },
   reviewSub: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
   reviewMeta: { color: Colors.primary, fontSize: 12, marginTop: 6, fontWeight: '600' },
+  loginButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+  },
+  loginButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export default ProfileScreen;

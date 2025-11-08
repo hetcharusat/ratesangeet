@@ -282,15 +282,20 @@ router.post('/scrobble', async (req: Request, res: Response) => {
 
     const progressMs = progress_ms ?? 0;
     const durationMs = item.duration_ms ?? 0;
-    const minProgressForScrobble = durationMs * 0.5;
+    const minProgressForScrobble = durationMs * 0.4; // 40% threshold (aligned with client)
     
-    // Only scrobble if track is played 50% or more
+    // Only scrobble if track is played 40% or more
     if (progressMs < minProgressForScrobble || durationMs === 0) {
-      return res.json({ scrobbled: false, message: 'Minimum play time not reached (50%)' });
+      return res.json({ scrobbled: false, message: 'Minimum play time not reached (40%)' });
     }
 
+    // ROOT FIX: Round timestamp to prevent duplicates
+    // Calculate when track started playing
     const startedAtMs = (timestamp ?? Date.now()) - progressMs;
-    const playedAt = new Date(startedAtMs);
+    // Round to nearest 10 seconds to group rapid re-polls of same track
+    // This ensures the SAME rounded timestamp is used for deduplication
+    const roundedStartMs = Math.floor(startedAtMs / 10000) * 10000;
+    const playedAt = new Date(roundedStartMs);
 
     const trackName = item.name;
     const artistName = (item.artists || []).map((artist: any) => artist.name).join(', ');
@@ -338,7 +343,11 @@ router.post('/scrobble', async (req: Request, res: Response) => {
     }
 
     const scrobble = await Scrobble.findOneAndUpdate(
-      { userId, spotifyId: item.id, playedAt },
+      { 
+        userId, 
+        spotifyId: item.id, 
+        playedAt // Exact match on rounded timestamp (works with unique index)
+      },
       {
         $setOnInsert: {
           userId,
@@ -349,6 +358,7 @@ router.post('/scrobble', async (req: Request, res: Response) => {
         $set: {
           trackName,
           artistName,
+          albumId: item.album?.id,
           albumName,
           albumArt,
           durationMs,

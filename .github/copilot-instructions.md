@@ -39,20 +39,22 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Users
 
 ### Scrobbling contract
 - A track is considered "scrobbled" when at least 40% of its duration is played.
-- Threshold constant: `SCROBBLE_THRESHOLD = 0.4` (mobile `ScrobbleContext`).
-- Scrobbles are idempotent per (userId, spotifyId, playedAt) and safe to retry.
+- Threshold constant: `SCROBBLE_THRESHOLD = 0.4` (mobile `ScrobbleContext`, server `/scrobble` route).
+- Scrobbles are idempotent per (userId, spotifyId, ~10s time window) and safe to retry.
+- Deduplication: Server uses 10s-rounded playedAt timestamp to group rapid re-scrobbles; client uses simple track ID to prevent duplicate scrobbles within same session.
 - Persisted fields for each scrobble (Mongo):
-  - `userId`, `spotifyId`, `trackName`, `artistName`, `albumId?`, `albumName?`, `albumArt?`, `durationMs?`, `playedAt`, `source`.
+  - `userId`, `spotifyId`, `trackName`, `artistName`, `albumId`, `albumName`, `albumArt`, `durationMs`, `playedAt`, `source`.
 
 ### Album progress (as shown on History/Album Detail)
 - listenedTracks = number of unique album tracks that crossed the 40% threshold.
-- totalTracks = album track count from Spotify when `albumId` is present; otherwise fallback to size of listened set.
+- totalTracks = album track count from Spotify API (via albumId); albums without albumId are skipped.
 - completionPercent = round((listenedTracks / totalTracks) * 100).
+- totalPlays = total scrobble count for that album (can be > listenedTracks if user replayed tracks).
 - An album is shown as "Completed" when completionPercent === 100.
 
 ### Top Albums (Home)
-- We surface albums where unique tracks played > 3 (heuristic to filter singles/EPs).
-- `count` = total scrobbles for that album (number of scrobbled tracks, not days).
+- We surface albums where unique tracks played >= 3 (heuristic to filter singles/EPs).
+- `count` = total scrobbles for that album (number of scrobbled tracks, not unique tracks).
 - UI label shows: "{count} scrobbles".
 - Server may also compute `totalTimeMs` for future use, but UI prioritizes scrobble count.
 
@@ -121,6 +123,62 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Users
 4) Add defensive fallbacks (e.g., use `albumName` when `albumId` missing), but prioritize fixing the source.
 5) Add a tiny test/seed to prevent regression (e.g., `add-test-scrobbles.ts`).
 
+## Local Testing Guide (Beta Phase)
+
+### Setup Philosophy
+- **Production URLs stay in code** (Render domain for builds, LAN IP for dev)
+- **Server .env is gitignored** (local DB credentials ≠ Render env vars)
+- **Mobile config auto-detects** environment (production vs dev)
+- **Push to GitHub = safe** (Render uses its own environment variables)
+
+### Local Testing Steps
+1. **Start Server** (uses MongoDB Atlas via local .env):
+   ```bash
+   cd server
+   npm run dev  # Runs on http://0.0.0.0:5000 + LAN IP
+   ```
+   - Server connects to **production MongoDB Atlas** (`ratesangeet` database)
+   - Logs show: `✅ MongoDB connected successfully`
+   - Available on LAN: `http://192.168.42.205:5000` (your Wi-Fi IP)
+
+2. **Start Mobile** (connects to local server in dev mode):
+   ```bash
+   cd mobile
+   npm run start  # Expo dev server
+   # Press 'a' for Android, 'i' for iOS
+   ```
+   - Mobile auto-detects: `http://192.168.42.205:5000/api` (dev mode)
+   - Uses **real production data** from Atlas
+   - Changes reload instantly (no rebuild)
+
+3. **Test Cache Changes**:
+   - Load Home screen → See stats (cache MISS, "Fresh")
+   - Reload within 15s → See "Cached" with timestamp
+   - Pull-to-refresh → See "(forced)" and fresh data
+   - Server logs show: `Cache HIT`, `Force bypass`, `New scrobble detected`
+
+### Environment Variable Flow
+| Environment | API URL | MongoDB | How It's Set |
+|-------------|---------|---------|--------------|
+| **Local Dev** | `http://192.168.42.205:5000/api` | MongoDB Atlas | `mobile/src/config/index.ts` heuristics |
+| **Production (Render)** | `https://ratesangeet.onrender.com/api` | MongoDB Atlas | Render env vars + `NODE_ENV=production` |
+| **APK Build** | `https://ratesangeet.onrender.com/api` | MongoDB Atlas | `NODE_ENV=production` in build |
+
+### Override for Testing (Optional)
+```powershell
+# Test mobile against different server
+cd mobile
+$env:EXPO_PUBLIC_API_URL="http://localhost:5000/api"
+npm run start
+```
+
+### What's Safe to Push
+✅ All code changes (URLs are environment-aware)  
+✅ Server routes, models, jobs  
+✅ Mobile screens, components, services  
+❌ Never commit `server/.env` (already gitignored)  
+❌ Never hardcode localhost in committed code
+
 ## Seed/Test Data
 - Script: `server/add-test-scrobbles.ts` – seeds 3 canonical albums with ~40–45% completion.
 - Albums seeded (Spotify IDs):
@@ -132,11 +190,65 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Users
 ## Development Philosophy & Best Practices
 
 ### 🚨 CRITICAL: Always Find Root Cause, Never Apply Quick Patches
-- **DO NOT** apply quick fixes or patches without understanding the underlying issue
-- **ALWAYS** trace the data flow end-to-end to find the root cause
-- **VERIFY** that your fix addresses the actual problem, not just the symptom
-- **TEST** that your solution works across all related components
-- **DOCUMENT** what was broken and why the fix works
+
+**GOLDEN RULE: Fix at the SOURCE, not downstream cleanup.**
+
+#### What is a ROOT FIX vs PATCH?
+
+| Issue | ❌ PATCH (Symptom Fix) | ✅ ROOT FIX (Source Fix) |
+|-------|----------------------|------------------------|
+| **Duplicate data** | Delete duplicates in a cleanup job | Fix uniqueness constraint/key at insertion point |
+| **Wrong calculation** | Hide/adjust result in UI | Fix calculation formula at data generation |
+| **Missing data** | Add fallback values | Ensure data is captured at source |
+| **Timestamp issues** | Compare/dedupe timestamps after save | Normalize timestamp BEFORE save |
+| **Type mismatches** | Cast types in display layer | Fix type at API boundary/schema |
+
+#### Root Fix Checklist:
+- [ ] **Trace end-to-end**: Follow data from origin → DB → API → UI
+- [ ] **Find generation point**: Where is the wrong data CREATED?
+- [ ] **Fix at source**: Change the code that GENERATES the data
+- [ ] **Verify constraints**: Does the fix work WITH existing DB indexes/constraints?
+- [ ] **No workarounds**: Solution should NOT require cleanup jobs, post-processing, or UI hacks
+- [ ] **Self-healing**: System automatically prevents the bug going forward
+
+#### Example: Duplicate Scrobbles (Root Fix Applied)
+```typescript
+// ❌ PATCH: Delete duplicates after they're created
+setInterval(() => {
+  db.scrobbles.aggregate([...]).forEach(doc => {
+    db.scrobbles.deleteMany({ _id: { $in: doc.ids.slice(1) } });
+  });
+}, 60000); // Band-aid: Run cleanup every minute
+
+// ✅ ROOT FIX: Prevent duplicates at insertion
+const startedAtMs = timestamp - progressMs;
+const roundedStartMs = Math.floor(startedAtMs / 10000) * 10000; // Round to 10s
+const playedAt = new Date(roundedStartMs); // Same value for all polls
+
+await Scrobble.findOneAndUpdate(
+  { userId, spotifyId, playedAt }, // Exact match works with unique index
+  { $setOnInsert: {...}, $set: {...} },
+  { upsert: true }
+); // MongoDB enforces uniqueness automatically
+```
+
+#### Red Flags (Indicates Patch, Not Root Fix):
+- 🚩 Adding cleanup jobs/cron tasks
+- 🚩 Manual deduplication loops
+- 🚩 UI hiding/transforming wrong data
+- 🚩 Multiple try-catch with fallbacks masking the issue
+- 🚩 Comments like "workaround for...", "hack to fix..."
+- 🚩 Same bug can happen again with different data
+
+#### Process for Root Fixing:
+1. **Reproduce**: Get exact steps to trigger the bug
+2. **Trace**: Log every transformation point from source → destination
+3. **Identify**: Find the FIRST place where data becomes wrong
+4. **Fix**: Change that specific point (not later cleanup)
+5. **Validate**: Ensure fix works with existing constraints (indexes, types, etc.)
+6. **Test**: Verify bug cannot happen again with any data
+
+### Dynamic Problem-Solving Approach
 
 ### Dynamic Problem-Solving Approach
 1. **Trace the entire data flow** from source to destination
@@ -149,6 +261,31 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Users
    - SQL queries and aggregations
 4. **Fix systematically** at the root, not the symptom
 5. **Validate** that all related code is aligned
+6. **No patches**: If you're adding cleanup/workaround code, you're not at the root
+
+### Example: Root Fix Pattern (Actual Implementation)
+```typescript
+// PROBLEM: Duplicate scrobbles wasting storage
+// ❌ WRONG APPROACH (Patch):
+// - Add cleanup job to delete duplicates every hour
+// - Add client-side check to prevent duplicate API calls
+// - Add UI filter to hide duplicate entries
+
+// ✅ RIGHT APPROACH (Root Fix):
+// 1. TRACE: progressMs changes every 3s → startedAtMs changes → playedAt changes → unique index fails
+// 2. IDENTIFY: Root cause = timestamp not stable across polls
+// 3. FIX AT SOURCE: Round timestamp to 10s BEFORE saving
+const roundedStartMs = Math.floor(startedAtMs / 10000) * 10000;
+const playedAt = new Date(roundedStartMs); // Stable across polls
+
+// 4. USE EXISTING CONSTRAINTS: Exact match works with unique index
+await Scrobble.findOneAndUpdate(
+  { userId, spotifyId, playedAt }, // Index enforces uniqueness
+  { ... },
+  { upsert: true }
+);
+// Result: No duplicates possible, no cleanup needed, self-healing
+```
 
 ### Example: Hybrid Storage Data Flow
 ```

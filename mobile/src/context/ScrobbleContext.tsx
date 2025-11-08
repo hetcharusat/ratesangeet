@@ -49,13 +49,15 @@ const IDLE_INTERVAL = 120000;            // Check every 2min when paused (backup
 const MAX_POLL_INTERVAL = 45000;         // Max 45s between checks (safety)
 const MIN_POLL_INTERVAL = 3000;          // Min 3s (rate limit safety)
 
+// Deduplication: Track last scrobbled track ID to avoid duplicate scrobbles
+// Use only spotifyId (not timestamp) to prevent same track from scrobbling twice in same session
 const getPlaybackKey = (playback: CurrentlyPlayingResponse) => {
   if (!playback.track) {
     return null;
   }
-
-  const timestampMs = playback.timestamp ?? Date.now();
-  return `${playback.track.id}-${Math.floor(timestampMs / 1000)}`;
+  // Simple key: just the track ID
+  // This prevents duplicate scrobbles within the same listening session
+  return playback.track.id;
 };
 
 export const ScrobbleProvider = ({ children }: ScrobbleProviderProps) => {

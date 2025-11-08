@@ -42,8 +42,8 @@ const HistoryScreen = () => {
         
         // Calculate album completion with real total tracks from Spotify
         const albumMap = new Map<string, {
-          tracks: Set<string>;
-          plays: number;
+          uniqueTracks: Set<string>;
+          totalScrobbles: number;
           albumArt: string;
           artistName: string;
           lastPlayed: string;
@@ -55,8 +55,8 @@ const HistoryScreen = () => {
             const key = scrobble.albumName;
             if (!albumMap.has(key)) {
               albumMap.set(key, {
-                tracks: new Set(),
-                plays: 0,
+                uniqueTracks: new Set(),
+                totalScrobbles: 0,
                 albumArt: scrobble.albumArt || '',
                 artistName: scrobble.artistName,
                 lastPlayed: scrobble.playedAt,
@@ -65,19 +65,18 @@ const HistoryScreen = () => {
             }
             const album = albumMap.get(key)!;
             
-              // Update albumId if this scrobble has one and we don't have one yet
-              if (scrobble.albumId && !album.albumId) {
-                album.albumId = scrobble.albumId;
-              }
+            // Update albumId if this scrobble has one and we don't have one yet
+            if (scrobble.albumId && !album.albumId) {
+              album.albumId = scrobble.albumId;
+            }
             
-              album.tracks.add(scrobble.spotifyId);
-            album.plays++;
+            // Track unique tracks listened
+            album.uniqueTracks.add(scrobble.spotifyId);
+            // Count total scrobbles (plays)
+            album.totalScrobbles++;
+            
             if (new Date(scrobble.playedAt) > new Date(album.lastPlayed)) {
               album.lastPlayed = scrobble.playedAt;
-            }
-            // Use the first albumId we find
-            if (!album.albumId && scrobble.albumId) {
-              album.albumId = scrobble.albumId;
             }
           }
         });
@@ -92,33 +91,40 @@ const HistoryScreen = () => {
         for (let i = 0; i < albumEntries.length; i += BATCH_SIZE) {
           const batch = albumEntries.slice(i, i + BATCH_SIZE);
           const batchPromises = batch.map(async ([albumName, data]) => {
-            let totalTracks = data.tracks.size; // Default fallback
+            // Default: if we can't get Spotify data, use 0 (will filter out album)
+            let totalTracks = 0;
             
             console.log('[HistoryScreen] Processing album:', albumName, {
               albumId: data.albumId,
-              listenedTracks: data.tracks.size,
-              defaultTotal: totalTracks,
+              listenedTracks: data.uniqueTracks.size,
+              hasAlbumId: !!data.albumId,
             });
             
-            // Try to get real total tracks from Spotify API
+            // CRITICAL: Always try to get real total tracks from Spotify API
+            // Without albumId, we can't show accurate progress
             if (data.albumId && accessToken) {
               try {
                 const albumDetails = await getAlbumDetails(accessToken, data.albumId);
-                totalTracks = albumDetails.total_tracks || albumDetails.tracks?.total || totalTracks;
-                console.log('[HistoryScreen] Got Spotify details for', albumName, ':', totalTracks, 'tracks');
+                totalTracks = albumDetails.total_tracks || albumDetails.tracks?.total || 0;
+                console.log('[HistoryScreen] ✅ Got Spotify details for', albumName, ':', totalTracks, 'tracks');
               } catch (error) {
-                console.log('[HistoryScreen] Failed to fetch album details for', albumName, ':', error);
-                // Silently use fallback on error
+                console.log('[HistoryScreen] ❌ Failed to fetch album details for', albumName, ':', error);
+                // Without total tracks, we can't show accurate progress - skip this album
+                return null;
               }
+            } else {
+              console.log('[HistoryScreen] ⚠️ No albumId for', albumName, '- skipping (can\'t determine total tracks)');
+              return null;
             }
 
-            const listenedTracks = data.tracks.size;
+            const listenedTracks = data.uniqueTracks.size;
             const completionPercent = totalTracks > 0 ? Math.round((listenedTracks / totalTracks) * 100) : 0;
 
             console.log('[HistoryScreen] Completion for', albumName, ':', {
               listenedTracks,
               totalTracks,
               completionPercent,
+              totalScrobbles: data.totalScrobbles,
               passes: totalTracks >= 5 && completionPercent >= 40,
             });
 
@@ -130,10 +136,10 @@ const HistoryScreen = () => {
                 artistName: data.artistName,
                 albumArt: data.albumArt,
                 albumId: data.albumId,
-                totalTracks,
-                listenedTracks,
-                completionPercent,
-                totalPlays: data.plays,
+                totalTracks, // Real album size from Spotify
+                listenedTracks, // Unique tracks user listened to
+                completionPercent, // listenedTracks / totalTracks * 100
+                totalPlays: data.totalScrobbles, // Total scrobbles (can be > listenedTracks if replays)
                 lastPlayed: data.lastPlayed,
               };
             }

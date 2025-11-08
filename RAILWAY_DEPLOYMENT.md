@@ -68,6 +68,18 @@ cd mobile
 eas build --platform android --profile preview
 ```
 
+To point the app at your Railway API during build, set the public env var so the app uses it at runtime:
+
+```bash
+# Windows PowerShell
+$env:EXPO_PUBLIC_API_URL="https://<your-railway-domain>/api"; eas build --platform android --profile preview
+
+# macOS/Linux
+EXPO_PUBLIC_API_URL="https://<your-railway-domain>/api" eas build --platform android --profile preview
+```
+
+Alternatively, after you get your Railway URL, replace `YOUR_RAILWAY_DOMAIN` in `mobile/src/config/index.ts` and commit before building.
+
 ## Troubleshooting
 - **Build fails**: Check logs in Railway dashboard
 - **MongoDB connection error**: Verify `MONGODB_URI` is set correctly

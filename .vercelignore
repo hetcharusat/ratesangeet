@@ -1,0 +1,29 @@
+# Vercel
+.vercel
+.next
+
+# Node
+node_modules
+npm-debug.log
+
+# Build
+dist
+.expo
+.expo-shared
+
+# Server (not needed for frontend deploy)
+server
+
+# Railway (backend deployment)
+.railway
+
+# Docs
+docs
+*.md
+!README.md
+
+# Config
+.git
+.gitignore
+.eslintrc*
+tsconfig.json

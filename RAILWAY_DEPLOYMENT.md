@@ -11,11 +11,12 @@
 3. Authorize Railway to access your GitHub
 4. Select your `spotiireate` repository
 
-## Step 3: Add MongoDB Database
-1. In your Railway project, click "New"
-2. Select "Database" → "Add MongoDB"
-3. Railway will automatically create a MongoDB instance
-4. Copy the `MONGO_URL` connection string (you'll need this)
+## Step 3: Connect MongoDB (Atlas)
+You already have MongoDB Atlas, so skip creating a Railway database. Instead:
+1. Open MongoDB Atlas → Database → Connect → Drivers
+2. Copy the connection string (starts with `mongodb+srv://...`)
+3. Replace `<username>`/`<password>` and add your DB name (e.g., `spotify-tracker`)
+4. In Railway variables, set `MONGODB_URI` to this Atlas URI
 
 ## Step 4: Configure Environment Variables
 Click on your service → "Variables" tab → Add these (choose WEB or MOBILE redirect as needed):
@@ -23,7 +24,7 @@ Click on your service → "Variables" tab → Add these (choose WEB or MOBILE re
 ```
 NODE_ENV=production
 PORT=3000
-MONGODB_URI=${{MongoDB.MONGO_URL}}
+MONGODB_URI=mongodb+srv://<user>:<pass>@<cluster>/<db>?retryWrites=true&w=majority&appName=<AppName>
 SPOTIFY_CLIENT_ID=30d78a30cd9f435eba6edbaa4a427041
 SPOTIFY_CLIENT_SECRET=<optional_if_using_web_confidential_flow>
 # Dual redirects (you can set both)
@@ -38,9 +39,9 @@ ARCHIVE_KEEP_RECENT=200
 ```
 
 **Important:** 
-- Replace `<your_spotify_client_id>` and `<your_spotify_client_secret>` with your actual Spotify app credentials
+- Replace `<your_spotify_client_id>` and (optionally) `<your_spotify_client_secret>` with your Spotify app credentials
 - For `SESSION_SECRET`, use a random string (run in terminal: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
-- The `MONGODB_URI` will auto-fill from your MongoDB service
+- Use your Atlas connection string for `MONGODB_URI` (not a Railway DB)
 
 ## Step 5: Deploy
 1. Railway will auto-deploy when you push to GitHub

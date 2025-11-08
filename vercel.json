@@ -1,4 +1,5 @@
 {
+  "name": "ratesangeet",
   "buildCommand": "cd mobile && npm install && npx expo export -p web",
   "outputDirectory": "mobile/dist",
   "devCommand": "cd mobile && npm run web",

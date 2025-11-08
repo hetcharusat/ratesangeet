@@ -7,9 +7,15 @@ const router = Router();
 const CLOUD_ENABLE_SCROBBLES = (process.env.CLOUD_ENABLE_SCROBBLES ?? 'true') !== 'false';
 const CLOUD_SCROBBLE_RETENTION_DAYS = Number(process.env.CLOUD_SCROBBLE_RETENTION_DAYS) || 30;
 
-// In-memory cache for listening stats (1 minute TTL)
-const statsCache = new Map<string, { data: any; timestamp: number }>();
-const STATS_CACHE_TTL = 60 * 1000; // 1 minute
+// In-memory cache for listening stats.
+// Improved strategy:
+// 1. Very short TTL (15s) to keep UI feeling live.
+// 2. Force bypass with ?force=1
+// 3. Automatic bust if a newer scrobble exists (playedAt newer than cached.lastScrobblePlayedAt)
+// 4. Expose cache metadata for client side debugging.
+interface StatsCacheEntry { data: any; timestamp: number; lastScrobblePlayedAt?: number }
+const statsCache = new Map<string, StatsCacheEntry>();
+const STATS_CACHE_TTL = 15 * 1000; // 15 seconds
 
 // Get Recently Played Tracks
 router.get('/recent', async (req: Request, res: Response) => {
@@ -384,22 +390,55 @@ router.get('/scrobbles', async (req: Request, res: Response) => {
 
 // Get listening stats for a user
 router.get('/listening-stats', async (req: Request, res: Response) => {
-  const { userId, accessToken } = req.query;
+  const { userId, accessToken, force } = req.query as { userId?: string; accessToken?: string; force?: string };
 
   if (!userId) {
     return res.status(400).json({ error: 'userId required' });
   }
 
   try {
-    // Check cache first
     const cacheKey = `stats_${userId}`;
     const cached = statsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < STATS_CACHE_TTL) {
-      console.log(`[LISTENING STATS] ✅ Returning cached data for user: ${userId}`);
-      return res.json(cached.data);
+    const now = Date.now();
+    const wantForce = force === '1' || force === 'true';
+
+    // We need the most recent scrobble timestamp to decide freshness if we have a cached copy.
+    // Grab ONLY the latest scrobble's playedAt first (cheap query with select + limit 1).
+    const latestScrobble = await Scrobble.findOne({ userId }).sort({ playedAt: -1 }).select('playedAt').lean();
+    const latestPlayedAtMs = latestScrobble ? new Date(latestScrobble.playedAt).getTime() : undefined;
+
+    let cacheHit = false;
+    if (!wantForce && cached) {
+      const ageMs = now - cached.timestamp;
+      const ttlValid = ageMs < STATS_CACHE_TTL;
+      const scrobbleFresh = latestPlayedAtMs && cached.lastScrobblePlayedAt ? latestPlayedAtMs <= cached.lastScrobblePlayedAt : true;
+      if (ttlValid && scrobbleFresh) {
+        cacheHit = true;
+        console.log(`[LISTENING STATS] ✅ Cache HIT for user=${userId} age=${ageMs}ms`);
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('X-Cache-Age', String(ageMs));
+        return res.json({
+          ...cached.data,
+          cache: {
+            hit: true,
+            ageMs,
+            generatedAt: cached.timestamp,
+            lastScrobblePlayedAt: cached.lastScrobblePlayedAt,
+          },
+        });
+      }
+      if (!ttlValid) {
+        console.log(`[LISTENING STATS] 🔄 Cache expired (age=${ageMs}ms >= ${STATS_CACHE_TTL}ms)`);
+      } else if (!scrobbleFresh) {
+        console.log(`[LISTENING STATS] 🔄 New scrobble detected; busting cache`);
+      }
     }
 
-    console.log(`[LISTENING STATS] Fetching stats for user: ${userId}`);
+    if (wantForce) {
+      console.log(`[LISTENING STATS] 🚫 Force bypass requested for user=${userId}`);
+    }
+
+    console.log(`[LISTENING STATS] Fetching fresh stats for user: ${userId}`);
     const overallStart = Date.now();
     
     // FAST MODE: Only fetch recent scrobbles (last 200) for instant loading
@@ -557,13 +596,25 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       topArtists,
     };
 
-    // Cache the result
-    statsCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+    // Cache the result (store latest scrobble timestamp for freshness invalidation)
+    statsCache.set(cacheKey, { data: responseData, timestamp: Date.now(), lastScrobblePlayedAt: latestPlayedAtMs });
     
     const totalTime = Date.now() - overallStart;
     console.log(`[LISTENING STATS] ✅ Total request time: ${totalTime}ms`);
 
-    res.json(responseData);
+    const ageMs = 0;
+    res.setHeader('X-Cache', cacheHit ? 'HIT' : 'MISS');
+    res.setHeader('X-Cache-Age', String(ageMs));
+    res.json({
+      ...responseData,
+      cache: {
+        hit: false,
+        ageMs,
+        generatedAt: Date.now(),
+        lastScrobblePlayedAt: latestPlayedAtMs,
+        forced: wantForce,
+      },
+    });
   } catch (error: any) {
     console.error('[LISTENING STATS ERROR]', error);
     console.error('[LISTENING STATS ERROR STACK]', error.stack);

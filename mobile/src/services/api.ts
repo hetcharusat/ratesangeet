@@ -272,9 +272,13 @@ export interface ListeningStats {
   }>;
 }
 
-export const getListeningStats = async (userId: string, accessToken?: string): Promise<ListeningStats> => {
+export const getListeningStats = async (
+  userId: string,
+  accessToken?: string,
+  opts?: { force?: boolean }
+): Promise<ListeningStats & { cache?: { hit: boolean; ageMs: number; generatedAt: number; lastScrobblePlayedAt?: number; forced?: boolean } }> => {
   const response = await api.get('/music/listening-stats', {
-    params: { userId, accessToken },
+    params: { userId, accessToken, force: opts?.force ? 1 : undefined },
   });
   return response.data;
 };

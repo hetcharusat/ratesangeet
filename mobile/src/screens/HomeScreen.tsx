@@ -63,7 +63,7 @@ const HomeScreen = () => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (opts?: { force?: boolean }) => {
     try {
       console.log('[HomeScreen] Starting to load data for user:', user?.id);
       if (user?.id) {
@@ -79,7 +79,7 @@ const HomeScreen = () => {
         const [reviewsData, statsData, listeningStatsData] = await Promise.all([
           withTimeout(retryWithBackoff(() => getUserReviews(user.id))),
           withTimeout(retryWithBackoff(() => getUserStats(user.id))),
-          withTimeout(retryWithBackoff(() => getListeningStats(user.id, accessToken || undefined))).catch(err => {
+          withTimeout(retryWithBackoff(() => getListeningStats(user.id, accessToken || undefined, { force: opts?.force }))).catch(err => {
             console.error('[HomeScreen] Listening stats failed:', err);
             return null;
           }),
@@ -111,7 +111,8 @@ const HomeScreen = () => {
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    // Force bypass cache when user manually pulls to refresh
+    loadData({ force: true });
   };
 
   const handleRateNowPlaying = () => {
@@ -218,6 +219,13 @@ const HomeScreen = () => {
                 </Text>
                 <Text style={styles.statLabel}>Artists</Text>
               </View>
+              {(listeningStats as any)?.cache && (
+                <View style={styles.cacheMetaContainer}>
+                  <Text style={styles.cacheMetaText} numberOfLines={1}>
+                    {(listeningStats as any).cache.hit ? 'Cached' : 'Fresh'} · Updated {new Date((listeningStats as any).cache.generatedAt).toLocaleTimeString()} {(listeningStats as any).cache.forced ? '(forced)' : ''}
+                  </Text>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -725,6 +733,15 @@ const styles = StyleSheet.create({
     color: '#1DB954',
     fontSize: 14,
     fontWeight: '600',
+  },
+  cacheMetaContainer: {
+    marginTop: 8,
+    paddingHorizontal: 4,
+    width: '100%',
+  },
+  cacheMetaText: {
+    fontSize: 11,
+    color: '#888',
   },
 });
 

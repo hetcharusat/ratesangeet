@@ -1,11 +1,14 @@
 # 🎵 Spotify Music Tracker
 
-[![Server Status](https://img.shields.io/uptimerobot/status/m797959122-0b3e8e3f5c5c7a0d5f5e5e5e?label=API%20Status&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
-[![Uptime](https://img.shields.io/uptimerobot/ratio/7/m797959122-0b3e8e3f5c5c7a0d5f5e5e5e?label=Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+[![Backend Status](https://img.shields.io/uptimerobot/status/m801757949-28611e67f3ccec3b8579fcdb?label=Backend%20(Render)&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+[![Backend Uptime](https://img.shields.io/uptimerobot/ratio/7/m801757949-28611e67f3ccec3b8579fcdb?label=API%20Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+
+[![Frontend Status](https://img.shields.io/uptimerobot/status/m801757971-4ce2c38569b98bd14f832e86?label=Frontend%20(Vercel)&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+[![Frontend Uptime](https://img.shields.io/uptimerobot/ratio/7/m801757971-4ce2c38569b98bd14f832e86?label=Web%20Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
 
 A mobile music tracking application similar to Letterboxd but for Spotify. Track, rate, and review songs, albums, and singles you've listened to. Built with React Native (Expo) and Node.js.
 
-> **Live Status**: [View Server Uptime Dashboard →](https://stats.uptimerobot.com/OyUXm4nc9m)
+> **Live Status**: [View Uptime Dashboard →](https://stats.uptimerobot.com/OyUXm4nc9m) | Backend: Render | Frontend: Vercel
 
 > Data storage overview: We use a hybrid model (cloud + local). See docs/HYBRID_STORAGE.md for the full specification.
 

@@ -48,6 +48,7 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
   };
 
   // ROOT FIX: Guard against loading before user ID is available
+  // Watch userIdParam and user?.id to detect navigation changes
   useEffect(() => {
     if (!resolvedUserId) {
       console.log('[ProfileScreen] Skipping load: no user ID available');
@@ -55,7 +56,7 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
       return;
     }
     loadProfile();
-  }, [resolvedUserId]);
+  }, [userIdParam, user?.id]);
 
   useEffect(() => {
     const loadReviews = async () => {
@@ -68,7 +69,7 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
       }
     };
     loadReviews();
-  }, [resolvedUserId]);
+  }, [userIdParam, user?.id]);
 
   // Search within modal for picking favorites
   useEffect(() => {

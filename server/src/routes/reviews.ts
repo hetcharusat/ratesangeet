@@ -170,8 +170,16 @@ router.post('/:id/react', async (req: Request, res: Response) => {
 
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const allowed: Record<string, string> = { like: '👍', love: '❤️', fire: '🔥', sad: '😢' };
-    if (type && !allowed[type]) {
+    // Support both emoji reactions and YouTube-style like/dislike
+    const allowed: Record<string, string> = { 
+      like: '👍', 
+      dislike: '👎',  // Added dislike support
+      love: '❤️', 
+      fire: '🔥', 
+      sad: '😢',
+      none: ''  // For removing reactions
+    };
+    if (type && type !== 'none' && !allowed[type]) {
       return res.status(400).json({ error: 'Invalid reaction type' });
     }
 
@@ -200,8 +208,8 @@ router.post('/:id/react', async (req: Request, res: Response) => {
       (review.reactionsByUser as any).delete(userId);
     }
 
-    // Add new reaction if provided (non-null)
-    if (type) {
+    // Add new reaction if provided (not 'none' and not empty)
+    if (type && type !== 'none') {
       inc(type);
       (review.reactionsByUser as any).set(userId, type);
     }

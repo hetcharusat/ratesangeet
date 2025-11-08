@@ -279,7 +279,19 @@ expo run:android --variant release
 | `SPOTIFY_REDIRECT_URI` | OAuth callback URL | `http://127.0.0.1:5000/api/auth/callback` |
 | `CLIENT_URL` | Mobile app URL | `http://127.0.0.1:8081` |
 
-## 📝 Future Enhancements
+## � Uptime Monitoring (Render Free Tier)
+
+To keep the Render free tier server awake and avoid 15-minute idle timeouts:
+
+1. **Endpoint**: `GET /ping` returns `"pong"`
+2. **Setup UptimeRobot**: 
+   - Add monitor: `https://ratesangeet.onrender.com/ping`
+   - Interval: 5 minutes (free tier)
+3. **Result**: Server stays awake 24/7, no cold starts
+
+📖 **Full guide**: See [`docs/UPTIME_INTEGRATION_SUMMARY.md`](docs/UPTIME_INTEGRATION_SUMMARY.md)
+
+## �📝 Future Enhancements
 
 - [ ] Social features (follow users, share reviews)
 - [ ] Playlist integration

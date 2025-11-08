@@ -116,6 +116,47 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Users
   - Mobile API types and aggregators
   - Any seed scripts and diagnostics
 
+## 🚨 CRITICAL: Terminal/Server Testing Rules
+
+### NEVER do this (WRONG):
+```bash
+# ❌ BAD: Start server as background task, then run commands in same terminal
+run_in_terminal("cd server; npm run dev", isBackground=true)
+run_in_terminal("curl http://localhost:5000/ping")  # This STOPS the server first!
+```
+
+### ALWAYS do this (CORRECT):
+```bash
+# ✅ GOOD: Start server using VS Code task (separate terminal)
+run_task(id="shell: Server")
+# Wait for server to start
+run_in_terminal("Start-Sleep -Seconds 8; curl http://localhost:5000/ping")
+```
+
+### Why This Matters:
+- When you run a command in a terminal, PowerShell **stops any background process** first
+- Server started with `isBackground=true` is **NOT in a separate terminal** - it's just backgrounded in the same session
+- Next command in that terminal **kills the background server** before running
+- **SOLUTION**: Always use `run_task()` for long-running servers - this creates a truly separate terminal
+
+### Testing Servers Correctly:
+1. **Start server**: Use `run_task(id="shell: Server")` (creates dedicated terminal)
+2. **Wait**: Add `Start-Sleep -Seconds 5-8` before testing (server needs time to start)
+3. **Test**: Run test commands in a **NEW terminal** (separate `run_in_terminal` call)
+4. **Verify**: Check task output with `get_task_output()` to see server logs
+
+### Example (Correct Flow):
+```bash
+# Step 1: Start server in dedicated terminal
+run_task(id="shell: Server", workspaceFolder="...")
+
+# Step 2: Wait and test in separate terminal
+run_in_terminal("Start-Sleep -Seconds 8; curl http://localhost:5000/ping", isBackground=false)
+
+# Step 3: Check server logs
+get_task_output(id="shell: Server")
+```
+
 ## Debugging Process Checklist
 1) Reproduce and capture logs (mobile console + server).
 2) Trace the field from UI → API client → API route → DB schema → seed/data source.

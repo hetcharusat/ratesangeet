@@ -371,26 +371,25 @@ export const getFriendsFeed = async (
   return response.data;
 };
 
-// React to a review (emoji reactions)
-export const reactToReview = async (
-  reviewId: string,
-  userId: string,
-  type: 'like' | 'love' | 'fire' | 'sad' | null
-) => {
-  const response = await api.post(`/reviews/${reviewId}/react`, { userId, type });
-  return response.data as {
-    success: boolean;
-    reviewId: string;
-    reactionsCount: Record<string, number>;
-    userReaction: string | null;
-    likes: number;
-  };
-};
+// Comments & Reactions APIs (Updated with threading support)
+export interface Comment {
+  _id: string;
+  reviewId: string;
+  userId: string;
+  username?: string;
+  text: string;
+  parentId?: string | null;
+  depth: number;
+  replyCount: number;
+  reactionsCount?: Record<string, number>;
+  reactionsByUser?: Record<string, string>;
+  createdAt: string;
+  replies?: Comment[];
+}
 
-// Comments APIs
-export const getReviewComments = async (reviewId: string): Promise<ReviewComment[]> => {
-  const response = await api.get(`/reviews/${reviewId}/comments`);
-  return response.data;
+export const getReviewComments = async (reviewId: string): Promise<Comment[]> => {
+  const response = await api.get(`/comments/${reviewId}`);
+  return response.data.comments as Comment[];
 };
 
 export const addReviewComment = async (
@@ -398,18 +397,32 @@ export const addReviewComment = async (
   userId: string,
   text: string,
   parentId?: string | null
-): Promise<ReviewComment> => {
-  const response = await api.post(`/reviews/${reviewId}/comments`, {
-    userId,
-    text,
-    parentId: parentId || null,
-  });
-  return response.data;
+): Promise<Comment> => {
+  const response = await api.post('/comments', { reviewId, userId, text, parentId });
+  return response.data.comment as Comment;
 };
 
 export const deleteReviewComment = async (commentId: string, userId: string) => {
-  const response = await api.delete(`/reviews/comments/${commentId}`, { data: { userId } });
-  return response.data as { success: boolean };
+  const response = await api.delete(`/comments/${commentId}`, { data: { userId } });
+  return response.data;
+};
+
+export const reactToComment = async (commentId: string, userId: string, reactionType: string) => {
+  const response = await api.post(`/comments/${commentId}/react`, { userId, reactionType });
+  return response.data.comment as Comment;
+};
+
+// React to a review (emoji reactions - single-select)
+export const reactToReview = async (reviewId: string, userId: string, reactionType: string) => {
+  const response = await api.post(`/reviews/${reviewId}/react`, { userId, type: reactionType });
+  
+  // Server returns { success, reviewId, reactionsCount, userReaction, likes }
+  // Convert to partial Review object for local update
+  return {
+    reactionsCount: response.data.reactionsCount,
+    userReaction: response.data.userReaction,
+    likes: response.data.likes,
+  } as Partial<Review>;
 };
 
 // Profile updates

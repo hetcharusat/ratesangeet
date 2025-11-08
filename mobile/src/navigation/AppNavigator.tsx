@@ -12,6 +12,7 @@ import SearchScreen from '../screens/SearchScreen';
 // import ExploreScreen from '../screens/ExploreScreen';
 // ActivityScreen retained (legacy); DiscoveryScreen replaces tab label.
 import DiscoveryScreen from '../screens/DiscoveryScreen';
+import ReviewFeedScreen from '../screens/ReviewFeedScreen';
 import AddReviewScreen from '../screens/AddReviewScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';

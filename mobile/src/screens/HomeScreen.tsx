@@ -231,22 +231,7 @@ const HomeScreen = () => {
         </View>
       )}
 
-      {/* Album Completion Sparkline */}
-      {listeningStats?.albumCompletions && listeningStats.albumCompletions.dailyCompletionTrend.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>Album Completions (30d)</Text>
-          <View style={styles.sparklineRow}>
-            {listeningStats.albumCompletions.dailyCompletionTrend.map((pt) => (
-              <View key={pt.date} style={[styles.sparkBar, { height: Math.min(50, pt.count * 8) }]} />
-            ))}
-          </View>
-          <Text style={styles.sparklineMeta}>
-            {listeningStats.albumCompletions.totalCompletedAlbums} albums completed · {listeningStats.albumCompletions.totalCompletedAlbumPlays || 0} total full plays · Last 7d: {listeningStats.albumCompletions.last7DaysCompletions || 0}
-            {listeningStats.albumCompletions.currentStreak && listeningStats.albumCompletions.currentStreak > 1 ? ` · 🔥 ${listeningStats.albumCompletions.currentStreak}-day streak` : ''}
-          </Text>
-        </View>
-      )}
-
+      {/* Now Playing / Last Scrobble Card */}
       {(currentTrack || lastScrobble) && (
         <View style={styles.nowPlayingCard}>
           <View style={styles.nowPlayingHeader}>
@@ -369,32 +354,19 @@ const HomeScreen = () => {
           <Text style={styles.sectionTitle} numberOfLines={1}>Top Artists</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
             {(listeningStats.topArtists || []).map((a, idx) => (
-              <View key={idx} style={[styles.artistPill, { backgroundColor: ['#1DB954','#FF6B6B','#4ECDC4','#FFD93D','#A78BFA'][idx] || '#1DB954' }]}>
-                <Text style={styles.artistEmoji}>🎤</Text>
+              <TouchableOpacity 
+                key={idx} 
+                style={[styles.artistPill, { backgroundColor: ['#1DB954','#FF6B6B','#4ECDC4','#FFD93D','#A78BFA'][idx] || '#1DB954' }]}
+                onPress={() => navigation.navigate('Artist' as any, { q: a.artist })}
+              >
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankText}>{idx + 1}</Text>
+                </View>
                 <Text style={styles.artistNameText} numberOfLines={1}>{a.artist}</Text>
                 <Text style={styles.artistCount}>{a.count}</Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      )}
-
-      {listeningStats && listeningStats.topGenres.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>Top Genres</Text>
-          <View style={styles.genreTagsContainer}>
-            {listeningStats.topGenres.slice(0, 5).map((genre, index) => (
-              <View 
-                key={index} 
-                style={[styles.genreTag, { 
-                  backgroundColor: ['#1DB954', '#FF6B6B', '#4ECDC4', '#FFD93D', '#A78BFA'][index] || '#1DB954' 
-                }]}
-              >
-                <Text style={styles.genreTagText}>{genre.genre}</Text>
-                <Text style={styles.genreTagCount}>{genre.count}</Text>
-              </View>
-            ))}
-          </View>
         </View>
       )}
 
@@ -785,7 +757,20 @@ const styles = StyleSheet.create({
     marginRight: 10,
     maxWidth: 220,
   },
-  artistEmoji: { fontSize: 16, marginRight: 6 },
+  rankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  rankText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   artistNameText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', flexShrink: 1 },
   artistCount: { color: '#FFFFFF', fontSize: 12, marginLeft: 8, opacity: 0.9 },
   albumItem: {

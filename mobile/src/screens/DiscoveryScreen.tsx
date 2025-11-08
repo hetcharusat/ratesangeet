@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, TouchableOpacity, RefreshControl, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, TouchableOpacity, RefreshControl, Linking, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '../theme/colors';
-import { getDiscoveryData, DiscoveryPayload, refreshAccessToken } from '../services/api';
+import { getDiscoveryData, DiscoveryPayload, refreshAccessToken, getPublicReviews, Review, Comment, getReviewComments, reactToReview, addReviewComment, deleteReviewComment, reactToComment } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { ThreadedReviewCard } from '../components/ThreadedReviewCard';
+import { useNavigation } from '@react-navigation/native';
+import type { NavigationProp } from '@react-navigation/native';
 
 type TabType = 'trending' | 'reviews';
 
@@ -216,14 +219,77 @@ const TrendingTab = ({ data, loading, refreshing, onRefresh }: { data: Discovery
   );
 };
 
-// Reviews tab (placeholder for now)
-const ReviewsTab = () => {
+// Reviews tab with actual review feed
+const ReviewsTab = ({ 
+  reviews, 
+  loading, 
+  refreshing, 
+  onRefresh,
+  currentUserId,
+  commentsMap,
+  onReact,
+  onComment,
+  onDeleteComment,
+  onReactToComment,
+  onLoadComments,
+}: { 
+  reviews: Review[];
+  loading: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  currentUserId?: string;
+  commentsMap: Record<string, Comment[]>;
+  onReact: (reviewId: string, reactionType: string) => Promise<void>;
+  onComment: (reviewId: string, text: string, parentId?: string) => Promise<void>;
+  onDeleteComment: (commentId: string) => Promise<void>;
+  onReactToComment: (commentId: string, reactionType: string) => Promise<void>;
+  onLoadComments: (reviewId: string) => Promise<void>;
+}) => {
+  if (loading) {
+    return (
+      <View style={[styles.center, { flex: 1 }]}> 
+        <ActivityIndicator color={Colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (reviews.length === 0) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.center}>
+        <Text style={styles.comingSoonTitle}>📝 No Public Reviews Yet</Text>
+        <Text style={styles.comingSoonText}>Be the first to share your music taste!</Text>
+        <Text style={styles.comingSoonSubtext}>Rate and review albums or tracks to contribute to the community.</Text>
+      </ScrollView>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.center}>
-      <Text style={styles.comingSoonTitle}>📝 Community Reviews</Text>
-      <Text style={styles.comingSoonText}>Coming soon! All public reviews will appear here.</Text>
-      <Text style={styles.comingSoonSubtext}>Stay tuned for ratings, reviews, and recommendations from the community.</Text>
-    </ScrollView>
+    <FlatList
+      data={reviews}
+      keyExtractor={(item) => item._id}
+      renderItem={({ item }) => (
+        <ThreadedReviewCard
+          review={item}
+          currentUserId={currentUserId}
+          comments={commentsMap[item._id] || []}
+          onReact={onReact}
+          onComment={onComment}
+          onDeleteComment={onDeleteComment}
+          onReactToComment={onReactToComment}
+          onLoadComments={onLoadComments}
+        />
+      )}
+      contentContainerStyle={styles.reviewsList}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={Colors.primary}
+          colors={[Colors.primary]}
+        />
+      }
+    />
   );
 };
 
@@ -232,7 +298,13 @@ const DiscoveryScreen = () => {
   const [data, setData] = useState<DiscoveryPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('trending');
+  const [activeTab, setActiveTab] = useState<TabType>('reviews'); // Default to reviews tab
+  
+  // Reviews state
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsRefreshing, setReviewsRefreshing] = useState(false);
+  const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({});
   
   const tokenRef = useRef<string | null>(accessToken);
   const refreshTokenRef = useRef<string | null>(refreshToken);
@@ -304,9 +376,111 @@ const DiscoveryScreen = () => {
     }
   };
 
-  useEffect(() => { load(); }, [accessToken]);
+  const loadReviews = async () => {
+    try {
+      const data = await getPublicReviews(50, 0);
+      
+      // Transform reviews to include userReaction for current user
+      const transformedReviews = data.map(review => ({
+        ...review,
+        userReaction: (review as any).reactionsByUser?.[user?.id || ''] || null,
+      }));
+      
+      setReviews(transformedReviews);
+      
+      // Auto-load comments for all reviews on initial load
+      for (const review of transformedReviews) {
+        loadComments(review._id);
+      }
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to load reviews:', error);
+    } finally {
+      setReviewsLoading(false);
+      setReviewsRefreshing(false);
+    }
+  };
+
+  const loadComments = async (reviewId: string) => {
+    try {
+      const comments = await getReviewComments(reviewId);
+      setCommentsMap(prev => ({ ...prev, [reviewId]: comments }));
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to load comments:', error);
+    }
+  };
+
+  const handleReact = async (reviewId: string, reactionType: string) => {
+    try {
+      if (!user?.id) return;
+      const updatedReview = await reactToReview(reviewId, user.id, reactionType);
+      
+      // Update review in list
+      setReviews(prev =>
+        prev.map(r => (r._id === reviewId ? { ...r, ...updatedReview } : r))
+      );
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to react:', error);
+    }
+  };
+
+  const handleComment = async (reviewId: string, text: string, parentId?: string) => {
+    try {
+      if (!user?.id) return;
+      await addReviewComment(reviewId, user.id, text, parentId);
+      
+      // Reload comments to show new one
+      await loadComments(reviewId);
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to comment:', error);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      if (!user?.id) return;
+      await deleteReviewComment(commentId, user.id);
+      
+      // Reload all reviews to refresh comments
+      await loadReviews();
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to delete comment:', error);
+    }
+  };
+
+  const handleReactToComment = async (commentId: string, reactionType: string) => {
+    try {
+      if (!user?.id) return;
+      await reactToComment(commentId, user.id, reactionType);
+      
+      // Find which review this comment belongs to and reload its comments
+      for (const review of reviews) {
+        const reviewComments = commentsMap[review._id] || [];
+        if (findCommentInTree(reviewComments, commentId)) {
+          await loadComments(review._id);
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('[DiscoveryScreen] Failed to react to comment:', error);
+    }
+  };
+
+  // Helper to find comment in nested tree
+  const findCommentInTree = (comments: Comment[], targetId: string): boolean => {
+    for (const comment of comments) {
+      if (comment._id === targetId) return true;
+      if (comment.replies && findCommentInTree(comment.replies, targetId)) return true;
+    }
+    return false;
+  };
+
+  useEffect(() => { 
+    load();
+    loadReviews();
+  }, [accessToken]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
+  const onRefreshReviews = () => { setReviewsRefreshing(true); loadReviews(); };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -339,7 +513,19 @@ const DiscoveryScreen = () => {
       {activeTab === 'trending' ? (
         <TrendingTab data={data} loading={loading} refreshing={refreshing} onRefresh={onRefresh} />
       ) : (
-        <ReviewsTab />
+        <ReviewsTab 
+          reviews={reviews}
+          loading={reviewsLoading}
+          refreshing={reviewsRefreshing}
+          onRefresh={onRefreshReviews}
+          currentUserId={user?.id}
+          commentsMap={commentsMap}
+          onReact={handleReact}
+          onComment={handleComment}
+          onDeleteComment={handleDeleteComment}
+          onReactToComment={handleReactToComment}
+          onLoadComments={loadComments}
+        />
       )}
     </SafeAreaView>
   );
@@ -415,6 +601,7 @@ const styles = StyleSheet.create({
   categoryTitle: { fontSize: 15, fontWeight: '800', color: Colors.primary, letterSpacing: 1 },
   categorySubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 3 },
   groupDivider: { height: 1, backgroundColor: Colors.surface, marginHorizontal: 20, marginTop: 30, marginBottom: 10, opacity: 0.6 },
+  reviewsList: { padding: 16 },
 });
 
 export default DiscoveryScreen;

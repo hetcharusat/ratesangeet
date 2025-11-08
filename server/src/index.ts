@@ -12,6 +12,7 @@ import reviewRoutes from './routes/reviews.js';
 import statsRoutes from './routes/stats.js';
 import usersRoutes from './routes/users.js';
 import discoverRoutes from './routes/discover.js';
+import commentsRoutes from './routes/comments.js';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -56,9 +57,88 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/discover', discoverRoutes);
+app.use('/api/comments', commentsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// ============================================================================
+// UPTIME MONITORING: /ping endpoint for UptimeRobot
+// ============================================================================
+// This lightweight route keeps the Render free tier alive by responding to
+// periodic pings from UptimeRobot (or similar monitoring services).
+//
+// HOW IT WORKS:
+// 1. Deploy this server to Render (https://ratesangeet.onrender.com)
+// 2. Add a monitor in UptimeRobot:
+//    - Type: HTTP(S)
+//    - URL: https://ratesangeet.onrender.com/ping
+//    - Interval: Every 5 minutes (free tier allows 5-min checks)
+// 3. UptimeRobot pings this endpoint every 5 minutes
+// 4. Render keeps the container awake (avoids 15-minute idle timeout)
+//
+// WHY THIS MATTERS:
+// - Render free tier spins down after 15 minutes of inactivity
+// - Cold starts take 30-60 seconds (bad UX for users)
+// - UptimeRobot pings prevent the container from sleeping
+// - Bonus: You get uptime monitoring alerts if the server actually goes down
+//
+// SETUP STEPS:
+// 1. Sign up at https://uptimerobot.com (free tier = 50 monitors)
+// 2. Add Monitor → HTTP(S) Monitor
+// 3. URL: https://ratesangeet.onrender.com/ping
+// 4. Monitoring Interval: 5 minutes
+// 5. Alert Contacts: Add your email
+// 6. Save and monitor
+//
+// LOGS:
+// Every ping is logged with timestamp to help debug cold starts or downtime.
+// ============================================================================
+
+let pingCount = 0; // Track total pings (resets on server restart)
+const startTime = Date.now(); // Server start timestamp
+
+app.get('/ping', (req, res) => {
+  pingCount++;
+  const now = new Date().toISOString();
+  const uptimeMinutes = Math.floor((Date.now() - startTime) / 60000);
+  
+  console.log(`[PING] #${pingCount} at ${now} (uptime: ${uptimeMinutes}m)`);
+  
+  // Simple text response (lightweight, no JSON parsing overhead)
+  res.status(200).send('pong');
+});
+
+// Root route: helpful message for manual testing
+app.get('/', (req, res) => {
+  const uptimeMinutes = Math.floor((Date.now() - startTime) / 60000);
+  res.send(`
+    <html>
+      <head><title>Ratesangeet API</title></head>
+      <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px;">
+        <h1>🎵 Ratesangeet API Server</h1>
+        <p><strong>Status:</strong> Running</p>
+        <p><strong>Uptime:</strong> ${uptimeMinutes} minutes</p>
+        <p><strong>Total Pings:</strong> ${pingCount}</p>
+        <hr>
+        <h3>Endpoints:</h3>
+        <ul>
+          <li><code>GET /ping</code> - UptimeRobot health check</li>
+          <li><code>GET /api/health</code> - API health status</li>
+          <li><code>GET /api/auth/*</code> - Authentication routes</li>
+          <li><code>GET /api/music/*</code> - Music & scrobble routes</li>
+          <li><code>GET /api/reviews/*</code> - Review routes</li>
+          <li><code>GET /api/users/*</code> - User profile routes</li>
+        </ul>
+        <hr>
+        <p style="color: #666; font-size: 14px;">
+          💡 Add <code>https://ratesangeet.onrender.com/ping</code> to UptimeRobot 
+          to keep this server awake on Render free tier.
+        </p>
+      </body>
+    </html>
+  `);
 });
 
 // MongoDB Connection

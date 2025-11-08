@@ -1,0 +1,34 @@
+name: Keep Render Server Alive
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Server
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL || 'https://ratesangeet.onrender.com' }}
+          UPTIME_SECRET_KEY: ${{ secrets.UPTIME_SECRET_KEY }}
+        run: |
+          echo "Pinging server at $SERVER_URL..."
+          RESPONSE=$(curl -s -X POST "$SERVER_URL/api/uptime/ping?key=$UPTIME_SECRET_KEY" \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP_STATUS:%{http_code}")
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS/d')
+          
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Server is alive!"
+          else
+            echo "⚠️ Server returned status $HTTP_STATUS"
+            exit 1
+          fi

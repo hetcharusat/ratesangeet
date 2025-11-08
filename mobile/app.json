@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Spotify Tracker",
+    "slug": "spotify-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "ratesangeet",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#191414"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ratesangeet.app",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["ratesangeet"]
+          }
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#191414"
+      },
+      "package": "com.ratesangeet.app",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["DEFAULT", "BROWSABLE"],
+          "data": {
+            "scheme": "ratesangeet",
+            "host": "callback"
+          }
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "83e22172-793c-476f-9603-545b7bedcdcb"
+      }
+    }
+  }
+}

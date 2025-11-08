@@ -1,0 +1,463 @@
+import axios from 'axios';
+import config from '../config';
+
+const api = axios.create({
+  baseURL: config.API_URL,
+  timeout: 10000,
+});
+
+export interface SpotifyImage {
+  url: string;
+}
+
+export interface Track {
+  id: string;
+  name: string;
+  artists: { name: string }[];
+  album: {
+    name: string;
+    images: SpotifyImage[];
+  };
+  duration_ms?: number;
+}
+
+export interface Review {
+  _id: string;
+  userId:
+    | string
+    | {
+        _id: string;
+        displayName: string;
+        profileImage?: string;
+      };
+  itemType: 'track' | 'album';
+  spotifyId: string;
+  itemName: string;
+  artistName: string;
+  albumArt?: string;
+  rating: number;
+  reviewText?: string;
+  isPublic: boolean;
+  likes: number;
+  reactionsCount?: Record<string, number>;
+  userReaction?: string | null;
+  listeningDate: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReviewPayload {
+  userId?: string;
+  itemType: 'track' | 'album';
+  spotifyId: string;
+  itemName: string;
+  artistName: string;
+  albumArt?: string;
+  rating: number;
+  reviewText?: string;
+  isPublic?: boolean;
+  listeningDate?: string;
+}
+
+export interface ReviewComment {
+  _id: string;
+  reviewId: string;
+  userId:
+    | string
+    | {
+        _id: string;
+        displayName: string;
+        profileImage?: string;
+        username?: string;
+      };
+  text: string;
+  parentId?: string | null;
+  createdAt: string;
+}
+
+export interface CurrentlyPlayingResponse {
+  isPlaying: boolean;
+  track?: Track;
+  progressMs?: number;
+  timestamp?: number;
+}
+
+export interface Scrobble {
+  _id: string;
+  userId: string;
+  spotifyId: string;
+  trackName: string;
+  artistName: string;
+  albumName?: string;
+  albumId?: string;
+  albumArt?: string;
+  durationMs?: number;
+  playedAt: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Auth APIs
+export const getSpotifyLoginUrl = async () => {
+  const response = await api.get('/auth/login');
+  return response.data.url;
+};
+
+export const handleSpotifyCallback = async (code: string, redirectUri?: string, codeVerifier?: string) => {
+  const response = await api.post('/auth/callback', { code, redirectUri, codeVerifier });
+  return response.data;
+};
+
+// PKCE-based login: send tokens to backend for user upsert
+export const pkceLogin = async (accessToken: string, refreshToken?: string) => {
+  const response = await api.post('/auth/pkce-login', { accessToken, refreshToken });
+  return response.data as {
+    accessToken: string;
+    refreshToken?: string;
+    user: {
+      id: string;
+      spotifyId: string;
+      displayName: string;
+      email: string;
+      profileImage?: string;
+      username?: string;
+    };
+  };
+};
+
+export const refreshAccessToken = async (
+  refreshToken: string
+): Promise<{ accessToken: string; refreshToken?: string }> => {
+  // Perform PKCE-compatible refresh directly with Spotify (no client secret)
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: (config as any).SPOTIFY_CLIENT_ID,
+  });
+  const response = await axios.post('https://accounts.spotify.com/api/token', params, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const data = response.data as any;
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token, // may be undefined if Spotify didn't return a new one
+  };
+};
+
+// Music APIs
+export const getRecentTracks = async (accessToken: string) => {
+  const response = await api.get('/music/recent', {
+    params: { accessToken },
+  });
+  return response.data;
+};
+
+export const getTopTracks = async (accessToken: string, timeRange: string = 'medium_term') => {
+  const response = await api.get('/music/top-tracks', {
+    params: { accessToken, timeRange },
+  });
+  return response.data;
+};
+
+export const searchMusic = async (accessToken: string, query: string, types: string = 'track,album') => {
+  const response = await api.get('/music/search', {
+    params: { accessToken, q: query, type: types },
+  });
+  return response.data;
+};
+
+export const getAlbumDetails = async (accessToken: string, albumId: string) => {
+  const response = await api.get('/music/album', {
+    params: { accessToken, albumId },
+  });
+  return response.data;
+};
+
+export interface ArtistProfile {
+  artist: { id: string; name: string; images?: SpotifyImage[] } | null;
+  topTracks: Array<{
+    id: string; name: string; duration_ms?: number; popularity?: number; preview_url?: string;
+    album?: { id?: string; name?: string; images?: SpotifyImage[] };
+    artists?: { id?: string; name: string }[];
+  }>;
+  discography: {
+    albums: Array<{ id: string; name: string; images?: SpotifyImage[]; release_date?: string }>;
+    singles: Array<{ id: string; name: string; images?: SpotifyImage[]; release_date?: string }>;
+    compilations: Array<{ id: string; name: string; images?: SpotifyImage[]; release_date?: string }>;
+  };
+}
+
+export const getArtistProfile = async (
+  accessToken: string,
+  opts: { artistId?: string; q?: string; market?: string }
+): Promise<ArtistProfile> => {
+  const response = await api.get('/music/artist', {
+    params: { accessToken, ...opts },
+  });
+  return response.data as ArtistProfile;
+};
+
+export const getCurrentlyPlaying = async (accessToken: string): Promise<CurrentlyPlayingResponse> => {
+  const response = await api.get('/music/currently-playing', {
+    params: { accessToken },
+  });
+  return response.data;
+};
+
+export const scrobbleCurrentTrack = async (accessToken: string, userId: string) => {
+  const response = await api.post('/music/scrobble', {
+    accessToken,
+    userId,
+  });
+  return response.data as { scrobbled: boolean; scrobble?: Scrobble; message?: string };
+};
+
+// Sync recently played from Spotify to backfill scrobbles (app could be closed)
+export const syncRecentPlays = async (accessToken: string, userId: string) => {
+  const response = await api.post('/music/sync-recent', { accessToken, userId });
+  return response.data as {
+    success: boolean;
+    inserted: number;
+    checked: number;
+    pages?: number;
+    startAfter?: number | null;
+    endAfter?: number | null;
+    items?: Array<{
+      spotifyId: string;
+      trackName: string;
+      artistName: string;
+      albumId?: string;
+      albumName?: string;
+      albumArt?: string;
+      durationMs?: number;
+      playedAt: string; // iso
+    }>;
+  };
+};
+
+export const getUserScrobbles = async (userId: string, limit: number = 50): Promise<Scrobble[]> => {
+  const response = await api.get('/music/scrobbles', {
+    params: { userId, limit },
+  });
+  return response.data;
+};
+
+export interface ListeningStats {
+  totalMinutes: number;
+  totalScrobbles: number;
+  uniqueArtistsCount?: number;
+  topAlbums: Array<{
+    name: string;
+    artist: string;
+    albumArt?: string;
+    count: number;
+    totalTracks?: number;
+    totalTimeMs?: number;
+  }>;
+  topSingles?: Array<{
+    name: string;
+    artist: string;
+    albumArt?: string;
+    count: number;
+    totalTracks?: number;
+  }>;
+  topGenres: Array<{
+    genre: string;
+    count: number;
+  }>;
+  topArtists?: Array<{
+    artist: string;
+    count: number;
+  }>;
+}
+
+export const getListeningStats = async (userId: string, accessToken?: string): Promise<ListeningStats> => {
+  const response = await api.get('/music/listening-stats', {
+    params: { userId, accessToken },
+  });
+  return response.data;
+};
+
+// Review APIs
+export const createReview = async (reviewData: ReviewPayload) => {
+  const response = await api.post('/reviews', reviewData);
+  return response.data;
+};
+
+export const getPublicReviews = async (limit: number = 50, skip: number = 0) => {
+  const response = await api.get('/reviews/public', {
+    params: { limit, skip },
+  });
+  return response.data;
+};
+
+export const getUserReviews = async (userId: string) => {
+  const response = await api.get(`/reviews/user/${userId}`);
+  return response.data;
+};
+
+export const getTrackReviews = async (spotifyId: string) => {
+  const response = await api.get(`/reviews/track/${spotifyId}`);
+  return response.data;
+};
+
+export const updateReview = async (reviewId: string, reviewData: Partial<Review>) => {
+  const response = await api.put(`/reviews/${reviewId}`, reviewData);
+  return response.data;
+};
+
+export const deleteReview = async (reviewId: string) => {
+  const response = await api.delete(`/reviews/${reviewId}`);
+  return response.data;
+};
+
+export const getUserStats = async (userId: string) => {
+  const response = await api.get(`/reviews/stats/${userId}`);
+  return response.data;
+};
+
+// User Search APIs
+export const searchUsers = async (query: string, limit: number = 20) => {
+  const response = await api.get('/auth/search-users', {
+    params: { query, limit },
+  });
+  return response.data;
+};
+
+// Follow system APIs
+export const getUserProfile = async (userId: string, viewerId?: string) => {
+  const response = await api.get(`/users/${userId}`, {
+    params: { viewerId },
+  });
+  return response.data;
+};
+
+export const followUser = async (targetUserId: string, followerUserId: string) => {
+  const response = await api.post(`/users/${targetUserId}/follow`, { followerId: followerUserId });
+  return response.data;
+};
+
+export const unfollowUser = async (targetUserId: string, followerUserId: string) => {
+  const response = await api.post(`/users/${targetUserId}/unfollow`, { followerId: followerUserId });
+  return response.data;
+};
+
+// Friends activity feed
+export const getFriendsFeed = async (
+  viewerUserId: string,
+  limit: number = 50,
+  skip: number = 0
+): Promise<Review[]> => {
+  const response = await api.get(`/users/${viewerUserId}/feed`, { params: { limit, skip } });
+  return response.data;
+};
+
+// React to a review (emoji reactions)
+export const reactToReview = async (
+  reviewId: string,
+  userId: string,
+  type: 'like' | 'love' | 'fire' | 'sad' | null
+) => {
+  const response = await api.post(`/reviews/${reviewId}/react`, { userId, type });
+  return response.data as {
+    success: boolean;
+    reviewId: string;
+    reactionsCount: Record<string, number>;
+    userReaction: string | null;
+    likes: number;
+  };
+};
+
+// Comments APIs
+export const getReviewComments = async (reviewId: string): Promise<ReviewComment[]> => {
+  const response = await api.get(`/reviews/${reviewId}/comments`);
+  return response.data;
+};
+
+export const addReviewComment = async (
+  reviewId: string,
+  userId: string,
+  text: string,
+  parentId?: string | null
+): Promise<ReviewComment> => {
+  const response = await api.post(`/reviews/${reviewId}/comments`, {
+    userId,
+    text,
+    parentId: parentId || null,
+  });
+  return response.data;
+};
+
+export const deleteReviewComment = async (commentId: string, userId: string) => {
+  const response = await api.delete(`/reviews/comments/${commentId}`, { data: { userId } });
+  return response.data as { success: boolean };
+};
+
+// Profile updates
+export const updateUsername = async (userId: string, username: string) => {
+  const response = await api.put(`/users/${userId}/username`, { username });
+  return response.data as { success: true; username: string };
+};
+
+type FavItem = { id: string; name: string; artist: string; image?: string };
+export const updateFavorites = async (
+  userId: string,
+  favAlbums?: FavItem[],
+  favTracks?: FavItem[]
+) => {
+  const response = await api.put(`/users/${userId}/favorites`, { favAlbums, favTracks });
+  return response.data as { success: true; favAlbums: FavItem[]; favTracks: FavItem[] };
+};
+
+export default api;
+
+// ===== Hybrid storage stats (album summaries) =====
+export type AlbumStats = {
+  userId: string;
+  albumId: string;
+  albumName?: string;
+  artistName?: string;
+  albumArt?: string;
+  playCount: number;
+  lastPlayedAt?: string;
+};
+
+export const upsertAlbumStatsBatch = async (
+  userId: string,
+  albums: Array<{ albumId: string; albumName?: string; artistName?: string; albumArt?: string; deltaCount: number; lastPlayedAt?: number }>
+) => {
+  const response = await api.post('/stats/album-batch-upsert', { userId, albums });
+  return response.data as { success: boolean; matched: number; modified: number; upserted: number };
+};
+
+export const getAlbumStats = async (userId: string, limit: number = 50): Promise<AlbumStats[]> => {
+  const response = await api.get(`/stats/album/${userId}`, { params: { limit } });
+  return response.data as AlbumStats[];
+};
+
+// Track stats (per-user track play counts)
+export type TrackStats = {
+  userId: string;
+  trackId?: string;
+  trackKey: string;
+  trackName?: string;
+  artistName?: string;
+  albumName?: string;
+  albumArt?: string;
+  playCount: number;
+  lastPlayedAt?: string;
+};
+
+export const upsertTrackStatsBatch = async (
+  userId: string,
+  tracks: Array<{ trackId?: string; trackName?: string; artistName?: string; albumName?: string; albumArt?: string; deltaCount: number; lastPlayedAt?: number }>
+) => {
+  const response = await api.post('/stats/track-batch-upsert', { userId, tracks });
+  return response.data as { success: boolean; matched: number; modified: number; upserted: number };
+};
+
+export const getTrackStats = async (userId: string, limit: number = 50): Promise<TrackStats[]> => {
+  const response = await api.get(`/stats/track/${userId}`, { params: { limit } });
+  return response.data as TrackStats[];
+};

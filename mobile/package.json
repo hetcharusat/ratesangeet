@@ -22,6 +22,7 @@
     "expo-dev-client": "~6.0.16",
     "expo-sqlite": "~14.0.3",
     "expo-status-bar": "~3.0.8",
+    "expo-updates": "^29.0.12",
     "expo-web-browser": "^15.0.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",

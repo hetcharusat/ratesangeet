@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: spotirate-api
+    runtime: node
+    region: singapore
+    plan: free
+    branch: dev
+    buildCommand: cd server && npm install && npm run build
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI_MOBILE
+        value: ratesangeet://callback
+      - key: SPOTIFY_REDIRECT_URI_WEB
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CLOUD_ENABLE_SCROBBLES
+        value: false
+      - key: ARCHIVE_RETENTION_DAYS
+        value: 90
+      - key: ARCHIVE_KEEP_RECENT
+        value: 200

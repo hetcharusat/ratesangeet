@@ -133,8 +133,7 @@ app.get('/', (req, res) => {
         </ul>
         <hr>
         <p style="color: #666; font-size: 14px;">
-          💡 Add <code>https://ratesangeet.onrender.com/ping</code> to UptimeRobot 
-          to keep this server awake on Render free tier.
+          💡 to support this dev , just give a star on <a href="https://github.com/hetcharusat/ratesangeet" target="_blank">GitHub</a>!
         </p>
       </body>
     </html>

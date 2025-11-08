@@ -1,6 +1,11 @@
 # 🎵 Spotify Music Tracker
 
+[![Server Status](https://img.shields.io/uptimerobot/status/m797959122-0b3e8e3f5c5c7a0d5f5e5e5e?label=API%20Status&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+[![Uptime](https://img.shields.io/uptimerobot/ratio/7/m797959122-0b3e8e3f5c5c7a0d5f5e5e5e?label=Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+
 A mobile music tracking application similar to Letterboxd but for Spotify. Track, rate, and review songs, albums, and singles you've listened to. Built with React Native (Expo) and Node.js.
+
+> **Live Status**: [View Server Uptime Dashboard →](https://stats.uptimerobot.com/OyUXm4nc9m)
 
 > Data storage overview: We use a hybrid model (cloud + local). See docs/HYBRID_STORAGE.md for the full specification.
 
@@ -14,6 +19,20 @@ A mobile music tracking application similar to Letterboxd but for Spotify. Track
 - 🔍 **Search** - Find and add any song or album from Spotify's catalog
 - 📱 **Native Mobile App** - Build APK for Android (iOS support included)
 
+## 📚 Documentation
+
+**[→ Browse Complete Documentation](docs/INDEX.md)**
+
+Our documentation is organized into 7 sections for easy navigation:
+
+1. **[Getting Started](docs/01-getting-started/)** - Quickstart, setup checklist, commands
+2. **[Architecture](docs/02-architecture/)** - System design, hybrid storage, scrobble algorithm
+3. **[Features](docs/03-features/)** - Threaded reviews, caching, uptime monitoring
+4. **[Design](docs/04-design/)** - Theme system, color palette
+5. **[Authentication](docs/05-authentication/)** - Spotify OAuth setup and PKCE flow
+6. **[Deployment](docs/06-deployment/)** - Render deployment guide
+7. **[Improvements](docs/07-improvements/)** - Past enhancements and fixes
+
 ## 🏗️ Project Structure
 
 ```
@@ -24,16 +43,25 @@ spotify-tracker/
 │   │   ├── navigation/  # React Navigation setup
 │   │   ├── context/     # Auth context
 │   │   ├── services/    # API service layer
+│   │   ├── storage/     # Local SQLite for scrobbles
 │   │   ├── utils/       # Helper functions
 │   │   └── config/      # App configuration
 │   └── App.tsx          # Entry point
 ├── server/              # Node.js/Express backend API
 │   └── src/
-│       ├── models/      # MongoDB models (User, Review)
-│       ├── routes/      # API routes (auth, music, reviews)
+│       ├── models/      # MongoDB models (User, Review, AlbumStats, TrackStats)
+│       ├── routes/      # API routes (auth, music, reviews, stats)
+│       ├── jobs/        # Background jobs (archive scrobbles)
 │       └── index.ts     # Server entry point
-├── docs/
-│   └── HYBRID_STORAGE.md # Detailed cloud vs local storage design
+├── docs/                # Organized documentation (7 sections)
+│   ├── INDEX.md         # Documentation homepage
+│   ├── 01-getting-started/
+│   ├── 02-architecture/
+│   ├── 03-features/
+│   ├── 04-design/
+│   ├── 05-authentication/
+│   ├── 06-deployment/
+│   └── 07-improvements/
 └── package.json         # Root package with helper scripts
 ```
 

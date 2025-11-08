@@ -1,0 +1,25 @@
+{
+  "name": "spotify-music-tracker",
+  "version": "1.0.0",
+  "description": "A mobile music tracking app like Letterboxd for Spotify",
+  "scripts": {
+    "install:all": "npm install && cd mobile && npm install && cd ../server && npm install",
+    "dev": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
+    "dev:web": "powershell -ExecutionPolicy Bypass -File ./start-web.ps1",
+    "dev:mobile": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
+    "mobile": "npm --prefix mobile run start",
+    "mobile:solo": "npm --prefix mobile run start",
+    "web": "powershell -ExecutionPolicy Bypass -File ./start-web.ps1",
+    "web:solo": "cd web && npm run dev",
+    "android": "cd mobile && npm run android",
+    "server": "cd server && npm run dev",
+    "build:android": "cd mobile && eas build --platform android",
+    "build:apk": "cd mobile && eas build --platform android --profile preview"
+  },
+  "keywords": ["spotify", "music", "tracker", "review", "mobile", "react-native"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.tgz
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Expo
+mobile/.expo/
+mobile/.expo-shared/
+
+# Android
+mobile/android/
+*.apk
+*.aab
+
+# iOS
+mobile/ios/
+*.ipa
+
+# Testing
+coverage/
+
+# Misc
+.cache/
+*.orig

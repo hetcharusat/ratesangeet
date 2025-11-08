@@ -1,0 +1,10 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Web dev wrapper for Expo Web (uses ../mobile app)",
+  "scripts": {
+    "dev": "cd ../mobile && npx expo start --web",
+    "start": "npm run dev"
+  }
+}

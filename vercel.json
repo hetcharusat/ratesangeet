@@ -1,7 +1,7 @@
 {
   "name": "ratesangeet",
-  "buildCommand": "cd mobile && npm install && npx expo export -p web",
-  "outputDirectory": "mobile/dist",
+  "buildCommand": "cd mobile && npm install && npx expo export:web",
+  "outputDirectory": "mobile/web-build",
   "devCommand": "cd mobile && npm run web",
   "installCommand": "cd mobile && npm install",
   "framework": null,

@@ -225,6 +225,7 @@ app.get('/', async (req, res) => {
 });
 
 // MongoDB Connection
+// Connect to MongoDB FIRST, then start server
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/spotify-tracker');
@@ -232,12 +233,27 @@ const connectDB = async () => {
     
     // Initialize server stats after DB connection
     await initializeServerStats();
+    
+    // Start server ONLY after MongoDB is connected
+    startWithFallback(DEFAULT_PORT);
+    
+    // Start background jobs after server is up
+    setTimeout(() => {
+      console.log('🗄️  Starting archive job...');
+      runArchiveJob();
+    }, 30000);
+    
+    setTimeout(() => {
+      console.log('🎵 Starting background scrobbler...');
+      startBackgroundScrobbler();
+    }, 60000);
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
     process.exit(1);
   }
 };
 
+// Start the connection process
 connectDB();
 
 const logAddresses = (port: number) => {
@@ -256,26 +272,8 @@ const logAddresses = (port: number) => {
   } catch {}
 };
 
-const startWithFallback = (port: number, attempts = 5) => {
-  const server = app.listen(port, '0.0.0.0');
-  server.on('listening', () => logAddresses(port));
-  server.on('error', (err: any) => {
-    if (err?.code === 'EADDRINUSE' && attempts > 0) {
-      const next = port + 1;
-      console.warn(`⚠️  Port ${port} in use, trying ${next}...`);
-      setTimeout(() => startWithFallback(next, attempts - 1), 250);
-    } else {
-      console.error('❌ Failed to start server:', err);
-      process.exit(1);
-    }
-  });
-};
-
-startWithFallback(DEFAULT_PORT);
-
 // Archive job: Run daily to clean up old scrobbles (keeps last 30 days in cloud)
 // Full history stays in local SQLite on each device
-const ARCHIVE_INTERVAL_HOURS = 24; // Run once per day
 const runArchiveJob = () => {
   console.log('🗄️  Running archive job to clean old scrobbles from cloud...');
   const isWindows = process.platform === 'win32';
@@ -296,30 +294,23 @@ const runArchiveJob = () => {
   });
 };
 
-// Run archive job on startup (after 30 seconds to let DB connect)
-setTimeout(runArchiveJob, 30000);
-
-// Then run every 24 hours
-setInterval(runArchiveJob, ARCHIVE_INTERVAL_HOURS * 60 * 60 * 1000);
-
-// ============================================================================
-// BACKGROUND SCROBBLER: Fetch Recently Played for all users every 30 minutes
-// ============================================================================
-// This keeps scrobbles in sync even when app is closed.
-// - Runs immediately on startup (after 60s to let DB connect)
-// - Then runs every 30 minutes (configurable via BACKGROUND_SCROBBLE_INTERVAL_MS)
-// - Staggered execution (5s delay between users) to avoid CPU overload
-// - Auto-refreshes expired tokens
-// - Deduplicates using existing unique index
-//
-// Environment variables:
-// - BACKGROUND_SCROBBLE_ENABLED=true (default: true, set to 'false' to disable)
-// - BACKGROUND_SCROBBLE_INTERVAL_MS=1800000 (default: 30 minutes)
-// - BACKGROUND_SCROBBLE_USER_DELAY_MS=5000 (default: 5 seconds between users)
-//
-// Compromise: Treats all Recently Played as "scrobbled" (bypasses 40% threshold)
-// ============================================================================
-setTimeout(() => {
-  console.log('🎵 Starting background scrobbler...');
-  startBackgroundScrobbler();
-}, 60000); // Wait 60s for DB to be ready
+const startWithFallback = (port: number, attempts = 5) => {
+  const server = app.listen(port, '0.0.0.0');
+  server.on('listening', () => {
+    logAddresses(port);
+    
+    // Start periodic jobs AFTER server is listening
+    // Archive job runs every 24 hours
+    setInterval(runArchiveJob, 24 * 60 * 60 * 1000);
+  });
+  server.on('error', (err: any) => {
+    if (err?.code === 'EADDRINUSE' && attempts > 0) {
+      const next = port + 1;
+      console.warn(`⚠️  Port ${port} in use, trying ${next}...`);
+      setTimeout(() => startWithFallback(next, attempts - 1), 250);
+    } else {
+      console.error('❌ Failed to start server:', err);
+      process.exit(1);
+    }
+  });
+};

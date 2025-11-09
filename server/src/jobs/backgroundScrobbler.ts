@@ -458,21 +458,24 @@ async function processUser(user: any): Promise<{ success: boolean; newScrobbles:
 
 /**
  * Main job: process all users with staggered delays
+ * Uses existing MongoDB connection from main server (no connect/disconnect)
  */
 async function runBackgroundScrobbler() {
   console.log('🎵 Starting background scrobbler job...');
 
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ MongoDB connected');
+    // Check if MongoDB is connected (should be connected by main server)
+    if (mongoose.connection.readyState !== 1) {
+      console.error('⚠️  MongoDB not connected, skipping scrobbler job');
+      return;
+    }
 
     // Get all users
     const users = await User.find().select('_id spotifyId accessToken refreshToken').lean();
     console.log(`📊 Found ${users.length} users to process`);
 
     if (users.length === 0) {
-      console.log('No users to process, exiting');
-      await mongoose.disconnect();
+      console.log('No users to process');
       return;
     }
 
@@ -501,12 +504,9 @@ async function runBackgroundScrobbler() {
 
     console.log('\n🎉 Background scrobbler job completed');
     console.log(`📊 Stats: ${successCount} success, ${failureCount} failures, ${totalNewScrobbles} new scrobbles`);
-
-    await mongoose.disconnect();
   } catch (error: any) {
     console.error('❌ Background scrobbler job failed:', error.message);
-    await mongoose.disconnect();
-    throw error;
+    // Don't throw - let the job fail gracefully without crashing the server
   }
 }
 

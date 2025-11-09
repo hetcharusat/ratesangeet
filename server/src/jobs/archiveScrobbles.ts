@@ -14,17 +14,18 @@ const DRY_RUN = process.env.ARCHIVE_DRY_RUN === '1' || process.env.ARCHIVE_DRY_R
 
 const cutoffDate = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
-async function connect() {
-  await mongoose.connect(MONGODB_URI);
-}
-
 async function run() {
-  console.log('Archive job starting', { RETENTION_DAYS, KEEP_RECENT_COUNT, DRY_RUN });
-  await connect();
+  console.log('🗄️  Archive job starting', { RETENTION_DAYS, KEEP_RECENT_COUNT, DRY_RUN });
+  
+  // Check if MongoDB is connected (should be connected by main server)
+  if (mongoose.connection.readyState !== 1) {
+    console.error('⚠️  MongoDB not connected, skipping archive job');
+    return;
+  }
 
   // Iterate distinct users in scrobbles
   const users = await Scrobble.distinct('userId');
-  console.log(`Found ${users.length} users with scrobbles`);
+  console.log(`📊 Found ${users.length} users with scrobbles`);
 
   let totalArchived = 0;
   for (const userId of users) {
@@ -136,11 +137,21 @@ async function run() {
     }
   }
 
-  console.log('Archive job finished', { totalArchived });
-  await mongoose.disconnect();
+  console.log('✅ Archive job finished', { totalArchived });
 }
 
-run().catch((err) => {
-  console.error('Archive job failed', err);
-  process.exit(1);
-});
+// Export the function for use by main server
+export function runArchiveJob() {
+  run().catch((err) => {
+    console.error('❌ Archive job failed', err);
+    // Don't exit - let the job fail gracefully
+  });
+}
+
+// If run directly as a script (for manual testing)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  run().catch((err) => {
+    console.error('❌ Archive job failed', err);
+    process.exit(1);
+  });
+}

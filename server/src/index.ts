@@ -14,10 +14,10 @@ import usersRoutes from './routes/users.js';
 import discoverRoutes from './routes/discover.js';
 import commentsRoutes from './routes/comments.js';
 import ServerStats from './models/ServerStats.js';
-import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { startBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
+import { runArchiveJob } from './jobs/archiveScrobbles.js';
 import { ensureMongoConnected } from './middleware/mongoConnection.js';
 
 // ES module equivalent of __dirname
@@ -299,27 +299,8 @@ const logAddresses = (port: number) => {
   } catch {}
 };
 
-// Archive job: Run daily to clean up old scrobbles (keeps last 30 days in cloud)
-// Full history stays in local SQLite on each device
-const runArchiveJob = () => {
-  console.log('🗄️  Running archive job to clean old scrobbles from cloud...');
-  const isWindows = process.platform === 'win32';
-  const job = spawn(isWindows ? 'npx.cmd' : 'npx', ['tsx', 'src/jobs/archiveScrobbles.ts'], {
-    cwd: __dirname + '/..',
-    stdio: 'inherit',
-    shell: true, // Use shell to resolve npx on Windows
-  });
-  job.on('error', (err) => {
-    console.error('❌ Archive job spawn error:', err.message);
-  });
-  job.on('close', (code) => {
-    if (code === 0) {
-      console.log('✅ Archive job completed successfully');
-    } else {
-      console.error(`❌ Archive job failed with code ${code}`);
-    }
-  });
-};
+// Archive job removed - now using imported function
+// (No more spawn, no more mongoose.disconnect)
 
 const startWithFallback = (port: number, attempts = 5) => {
   const server = app.listen(port, '0.0.0.0');

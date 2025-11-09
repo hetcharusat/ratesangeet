@@ -3,7 +3,7 @@ import config from '../config';
 
 const api = axios.create({
   baseURL: config.API_URL,
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds for slower connections
 });
 
 export interface SpotifyImage {

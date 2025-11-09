@@ -82,9 +82,10 @@ router.get('/search', async (req: Request, res: Response) => {
 
   try {
     const response = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q as string)}&type=${type}&limit=50`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q as string)}&type=${type}&limit=20`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 15000, // 15 second timeout for Spotify API
       }
     );
 
@@ -93,7 +94,8 @@ router.get('/search', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error searching music:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({ 
-      error: 'Search failed' 
+      error: 'Search failed',
+      message: error.message 
     });
   }
 });

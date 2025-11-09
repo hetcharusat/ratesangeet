@@ -41,6 +41,7 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) {
@@ -48,6 +49,7 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
       setQuery('');
       setResults([]);
       setLoading(false);
+      setError(null);
       return;
     }
   }, [visible]);
@@ -55,27 +57,41 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
+      setError(null);
       return;
     }
 
     const timer = setTimeout(async () => {
       setLoading(true);
+      setError(null);
       try {
         const data = await searchMusic(accessToken, query, type);
-        const mapped = data.map((item: any) => ({
+        // Extract items from the correct property based on type
+        const items = type === 'album' 
+          ? (data.albums?.items || []) 
+          : (data.tracks?.items || []);
+        
+        const mapped = items.map((item: any) => ({
           id: item.id,
           name: item.name,
           artist: item.artists?.[0]?.name || 'Unknown Artist',
           image: item.images?.[0]?.url || item.album?.images?.[0]?.url,
         }));
         setResults(mapped);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Search error:', error);
         setResults([]);
+        if (error.code === 'ECONNABORTED') {
+          setError('Search timed out. Please try again.');
+        } else if (error.response?.status === 401) {
+          setError('Session expired. Please log in again.');
+        } else {
+          setError('Search failed. Please try again.');
+        }
       } finally {
         setLoading(false);
       }
-    }, 500); // Debounce 500ms
+    }, 600); // Increased debounce to 600ms for better batching
 
     return () => clearTimeout(timer);
   }, [query, type, accessToken]);
@@ -121,16 +137,33 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
           {loading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.loadingText}>Searching...</Text>
             </View>
           )}
 
-          {!loading && query.trim() && results.length === 0 && (
+          {error && !loading && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {error}</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setError(null);
+                  setQuery(query + ' '); // Trigger re-search
+                  setTimeout(() => setQuery(query.trim()), 0);
+                }}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!loading && !error && query.trim() && results.length === 0 && (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No results found</Text>
             </View>
           )}
 
-          {!loading && !query.trim() && (
+          {!loading && !error && !query.trim() && (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 Type to search Spotify {type}s
@@ -138,7 +171,7 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
             </View>
           )}
 
-          {!loading && results.length > 0 && (
+          {!loading && !error && results.length > 0 && (
             <FlatList
               data={results}
               keyExtractor={(item) => item.id}
@@ -235,6 +268,35 @@ const styles = StyleSheet.create({
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 8,
+  },
+  errorContainer: {
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: Colors.error,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
   emptyContainer: {
     paddingVertical: 40,

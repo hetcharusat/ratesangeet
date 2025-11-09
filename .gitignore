@@ -49,3 +49,6 @@ coverage/
 # Misc
 .cache/
 *.orig
+
+#temp
+/temp.txt

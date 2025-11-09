@@ -1,0 +1,1 @@
+$body = @{adminKey = "pDx43qNwhBNhHikURh+iLEF6z1sW11PqYWjfe5fin04="} | ConvertTo-Json; Invoke-WebRequest -Uri "https://ratesangeet.onrender.com/api/admin/trigger-scrobbler" -Method POST -Body $body -ContentType "application/json" | Select-Object StatusCode, Content

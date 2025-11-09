@@ -459,8 +459,9 @@ async function processUser(user: any): Promise<{ success: boolean; newScrobbles:
 /**
  * Main job: process all users with staggered delays
  * Uses existing MongoDB connection from main server (no connect/disconnect)
+ * Exported for manual triggering via API endpoint
  */
-async function runBackgroundScrobbler() {
+export async function runBackgroundScrobbler() {
   console.log('🎵 Starting background scrobbler job...');
 
   try {

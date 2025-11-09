@@ -16,7 +16,7 @@ import commentsRoutes from './routes/comments.js';
 import ServerStats from './models/ServerStats.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { startBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
+import { startBackgroundScrobbler, runBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
 import { runArchiveJob } from './jobs/archiveScrobbles.js';
 import { ensureMongoConnected } from './middleware/mongoConnection.js';
 
@@ -66,6 +66,54 @@ app.use('/api/comments', ensureMongoConnected, commentsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// Manual trigger for background scrobbler (for testing/debugging)
+app.post('/api/admin/trigger-scrobbler', ensureMongoConnected, async (req, res) => {
+  const { adminKey } = req.body;
+  
+  // Simple admin key check (set ADMIN_KEY in env)
+  if (adminKey !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    console.log('🎵 Manual trigger: Starting background scrobbler...');
+    // Run async (don't wait for completion)
+    runBackgroundScrobbler().catch(err => {
+      console.error('Manual scrobbler trigger failed:', err);
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Background scrobbler triggered successfully',
+      note: 'Job is running in background. Check server logs for progress.'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual trigger for archive job (for testing/debugging)
+app.post('/api/admin/trigger-archive', ensureMongoConnected, async (req, res) => {
+  const { adminKey } = req.body;
+  
+  if (adminKey !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    console.log('🗄️  Manual trigger: Starting archive job...');
+    runArchiveJob();
+    
+    res.json({ 
+      success: true, 
+      message: 'Archive job triggered successfully',
+      note: 'Job is running in background. Check server logs for progress.'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================================================

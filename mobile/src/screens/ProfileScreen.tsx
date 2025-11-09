@@ -541,6 +541,14 @@ const ProfileScreen = () => {
                   <Text style={styles.scrobbleTime}>{formatTimeAgo(sc.playedAt)}</Text>
                 </View>
               </TouchableOpacity>
+              {sc.spotifyId && (
+                <TouchableOpacity
+                  style={styles.spotifyButton}
+                  onPress={() => Linking.openURL(`https://open.spotify.com/track/${sc.spotifyId}`)}
+                >
+                  <Text style={styles.spotifyButtonText}>▶ Spotify</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })()}
@@ -923,6 +931,19 @@ const styles = StyleSheet.create({
   scrobbleTime: {
     fontSize: 11,
     color: Colors.textSecondary,
+  },
+  spotifyButton: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#1DB954',
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+  },
+  spotifyButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   recentReviews: {
     gap: 12,

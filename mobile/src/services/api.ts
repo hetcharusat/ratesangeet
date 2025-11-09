@@ -629,3 +629,106 @@ export const getTrackStats = async (userId: string, limit: number = 50): Promise
   const response = await api.get(`/stats/track/${userId}`, { params: { limit } });
   return response.data as TrackStats[];
 };
+
+// New Profile APIs
+export interface UserSearchResult {
+  _id: string;
+  username?: string;
+  displayName: string;
+  profileImage?: string;
+  followersCount: number;
+  followingCount: number;
+}
+
+export interface UserSearchResponse {
+  results: UserSearchResult[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  hasMore: boolean;
+}
+
+export const searchUsersOptimized = async (query: string, page: number = 1, limit: number = 20): Promise<UserSearchResponse> => {
+  const response = await api.get('/users', {
+    params: { query, page, limit },
+  });
+  return response.data;
+};
+
+export interface UserActivity {
+  lastScrobble: {
+    trackName: string;
+    artistName: string;
+    albumArt?: string;
+    playedAt: string;
+    spotifyId?: string;
+  } | null;
+  recentReviews: Array<{
+    _id: string;
+    itemType: 'track' | 'album';
+    spotifyId: string;
+    itemName: string;
+    artistName: string;
+    albumArt?: string;
+    rating: number;
+    reviewText?: string;
+    createdAt: string;
+    likes: number;
+  }>;
+}
+
+export const getUserActivity = async (userId: string, reviewLimit: number = 5): Promise<UserActivity> => {
+  const response = await api.get(`/users/${userId}/activity`, {
+    params: { reviewLimit },
+  });
+  return response.data;
+};
+
+export interface MutualFollower {
+  _id: string;
+  username?: string;
+  displayName: string;
+  profileImage?: string;
+}
+
+export interface MutualFollowersResponse {
+  mutualFollowers: MutualFollower[];
+  count: number;
+}
+
+export const getMutualFollowers = async (userId: string, viewerId: string): Promise<MutualFollowersResponse> => {
+  const response = await api.get(`/users/${userId}/mutual-followers`, {
+    params: { viewerId },
+  });
+  return response.data;
+};
+
+export interface SimpleUser {
+  _id: string;
+  displayName: string;
+  username?: string;
+  profileImage?: string;
+}
+
+export const getFollowers = async (userId: string, limit: number = 50): Promise<{ followers: SimpleUser[]; count: number }> => {
+  const response = await api.get(`/users/${userId}/followers`, { params: { limit } });
+  return response.data as { followers: SimpleUser[]; count: number };
+};
+
+export const getFollowing = async (userId: string, limit: number = 50): Promise<{ following: SimpleUser[]; count: number }> => {
+  const response = await api.get(`/users/${userId}/following`, { params: { limit } });
+  return response.data as { following: SimpleUser[]; count: number };
+};
+
+export const updateUserProfile = async (
+  userId: string,
+  data: {
+    bio?: string;
+    instagramUsername?: string;
+    twitterHandle?: string;
+    location?: string;
+  }
+) => {
+  const response = await api.put(`/users/${userId}/profile`, data);
+  return response.data;
+};

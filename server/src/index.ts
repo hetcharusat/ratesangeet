@@ -17,6 +17,7 @@ import ServerStats from './models/ServerStats.js';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { startBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -300,3 +301,25 @@ setTimeout(runArchiveJob, 30000);
 
 // Then run every 24 hours
 setInterval(runArchiveJob, ARCHIVE_INTERVAL_HOURS * 60 * 60 * 1000);
+
+// ============================================================================
+// BACKGROUND SCROBBLER: Fetch Recently Played for all users every 45 minutes
+// ============================================================================
+// This keeps scrobbles in sync even when app is closed.
+// - Runs immediately on startup (after 60s to let DB connect)
+// - Then runs every 45 minutes (configurable via BACKGROUND_SCROBBLE_INTERVAL_MS)
+// - Staggered execution (5s delay between users) to avoid CPU overload
+// - Auto-refreshes expired tokens
+// - Deduplicates using existing unique index
+//
+// Environment variables:
+// - BACKGROUND_SCROBBLE_ENABLED=true (default: true, set to 'false' to disable)
+// - BACKGROUND_SCROBBLE_INTERVAL_MS=2700000 (default: 45 minutes)
+// - BACKGROUND_SCROBBLE_USER_DELAY_MS=5000 (default: 5 seconds between users)
+//
+// Compromise: Treats all Recently Played as "scrobbled" (bypasses 40% threshold)
+// ============================================================================
+setTimeout(() => {
+  console.log('🎵 Starting background scrobbler...');
+  startBackgroundScrobbler();
+}, 60000); // Wait 60s for DB to be ready

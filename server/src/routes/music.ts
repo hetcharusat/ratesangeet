@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import Scrobble from '../models/Scrobble.js';
 import UserStatsSummary from '../models/UserStatsSummary.js';
 import AlbumStats from '../models/AlbumStats.js';
+import TrackStats from '../models/TrackStats.js';
 import CompletionEvent from '../models/CompletionEvent.js';
 import User from '../models/User.js';
 
@@ -851,97 +852,211 @@ router.post('/sync-recent', async (req: Request, res: Response) => {
   }
 
   try {
-    // Start after the most recent scrobble we have
-    const latest = await Scrobble.findOne({ userId }).sort({ playedAt: -1 }).lean();
-    let cursorAfter = latest ? new Date(latest.playedAt).getTime() : undefined;
+    // Fetch Recently Played tracks (limit 50)
+    const response = await axios.get(
+      'https://api.spotify.com/v1/me/player/recently-played?limit=50',
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 15000,
+      }
+    );
+
+    const items = Array.isArray(response.data?.items) ? response.data.items : [];
+    
+    if (items.length === 0) {
+      return res.json({
+        success: true,
+        inserted: 0,
+        checked: 0,
+        items: [],
+      });
+    }
 
     let totalInserted = 0;
-    let totalChecked = 0;
-    let pages = 0;
-    const MAX_PAGES = 10; // up to ~500 recent plays
-
+    const albumStatsMap = new Map<string, any>();
+    const trackStatsMap = new Map<string, any>();
     const itemsForClient: any[] = [];
-    while (pages < MAX_PAGES) {
-      const params = new URLSearchParams({ limit: '50' });
-      if (cursorAfter) params.set('after', String(cursorAfter));
 
-      const response = await axios.get(
-        `https://api.spotify.com/v1/me/player/recently-played?${params.toString()}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+    for (const entry of items) {
+      const track = entry?.track;
+      const playedAtStr = entry?.played_at;
+      if (!track || !playedAtStr) continue;
 
-      const items = Array.isArray(response.data?.items) ? response.data.items : [];
-      totalChecked += items.length;
+      const spotifyId = track.id;
+      const trackName = track.name;
+      const artistName = (track.artists || []).map((a: any) => a.name).join(', ');
+      const albumId = track.album?.id;
+      const albumName = track.album?.name;
+      const albumArt = track.album?.images?.[0]?.url;
+      const durationMs = track.duration_ms ?? 0;
+      
+      // Round playedAt to 10s for deduplication (same as real-time scrobbling)
+      const playedAt = new Date(playedAtStr);
+      const roundedMs = Math.floor(playedAt.getTime() / 10000) * 10000;
+      const roundedPlayedAt = new Date(roundedMs);
 
-      if (items.length === 0) break;
+      if (!CLOUD_ENABLE_SCROBBLES) {
+        // Collect for client-side local storage
+        itemsForClient.push({
+          spotifyId,
+          trackName,
+          artistName,
+          albumId,
+          albumName,
+          albumArt,
+          durationMs,
+          playedAt: roundedPlayedAt.toISOString(),
+        });
+      } else {
+        try {
+          // Try to insert (unique index will prevent duplicates)
+          const result = await Scrobble.findOneAndUpdate(
+            { userId, spotifyId, playedAt: roundedPlayedAt },
+            {
+              $setOnInsert: {
+                userId,
+                spotifyId,
+                trackName,
+                artistName,
+                albumId,
+                albumName,
+                albumArt,
+                durationMs,
+                playedAt: roundedPlayedAt,
+                source: 'spotify',
+              },
+            },
+            { upsert: true, new: true }
+          );
 
-      let maxPlayedAtMs = cursorAfter || 0;
+          // If document was just created, count it as new
+          if (result && result.createdAt.getTime() === result.updatedAt.getTime()) {
+            totalInserted++;
 
-      for (const entry of items) {
-        const track = entry?.track;
-        const playedAtStr = entry?.played_at;
-        if (!track || !playedAtStr) continue;
+            // Aggregate album stats
+            const albumKey = albumId || albumName;
+            if (!albumStatsMap.has(albumKey)) {
+              albumStatsMap.set(albumKey, {
+                albumKey,
+                albumId,
+                albumName,
+                artistName,
+                albumArt,
+                count: 0,
+                lastPlayedAt: roundedPlayedAt,
+              });
+            }
+            const albumStat = albumStatsMap.get(albumKey);
+            albumStat.count++;
+            if (roundedPlayedAt > albumStat.lastPlayedAt) {
+              albumStat.lastPlayedAt = roundedPlayedAt;
+            }
 
-        const playedAt = new Date(playedAtStr);
-        const playedAtMs = playedAt.getTime();
-        if (playedAtMs > maxPlayedAtMs) maxPlayedAtMs = playedAtMs;
-
-        const durationMs = track.duration_ms ?? 0;
-        const trackName = track.name;
-        const artistName = (track.artists || []).map((a: any) => a.name).join(', ');
-        const albumId = track.album?.id;
-        const albumName = track.album?.name;
-        const albumArt = track.album?.images?.[0]?.url;
-        if (!CLOUD_ENABLE_SCROBBLES) {
-          // Do not persist; collect for client-side local storage
-          itemsForClient.push({
-            spotifyId: track.id,
-            trackName,
-            artistName,
-            albumId,
-            albumName,
-            albumArt,
-            durationMs,
-            playedAt: playedAt.toISOString(),
-          });
-        } else {
-          const existing = await Scrobble.findOne({ userId, spotifyId: track.id, playedAt });
-          if (existing) continue;
-          await Scrobble.create({
-            userId,
-            spotifyId: track.id,
-            trackName,
-            artistName,
-            albumName,
-            albumArt,
-            durationMs,
-            playedAt,
-            source: 'spotify',
-          });
-          totalInserted += 1;
+            // Aggregate track stats
+            const trackKey = spotifyId || trackName;
+            if (!trackStatsMap.has(trackKey)) {
+              trackStatsMap.set(trackKey, {
+                trackKey,
+                trackId: spotifyId,
+                trackName,
+                artistName,
+                albumName,
+                albumArt,
+                durationMs,
+                count: 0,
+                lastPlayedAt: roundedPlayedAt,
+              });
+            }
+            const trackStat = trackStatsMap.get(trackKey);
+            trackStat.count++;
+            if (roundedPlayedAt > trackStat.lastPlayedAt) {
+              trackStat.lastPlayedAt = roundedPlayedAt;
+            }
+          }
+        } catch (error: any) {
+          // Duplicate key error (E11000) is expected, skip it
+          if (error.code !== 11000) {
+            console.error('Error saving scrobble:', error.message);
+          }
         }
       }
+    }
 
-      pages += 1;
-      // If fewer than 50 returned, we've reached the end
-      if (items.length < 50) break;
+    // Update AlbumStats in bulk
+    if (albumStatsMap.size > 0) {
+      const albumOps = Array.from(albumStatsMap.values()).map((stat) => ({
+        updateOne: {
+          filter: { userId, albumKey: stat.albumKey },
+          update: {
+            $setOnInsert: { userId, albumKey: stat.albumKey, albumId: stat.albumId },
+            $set: { albumName: stat.albumName, artistName: stat.artistName, albumArt: stat.albumArt },
+            $inc: { playCount: stat.count },
+            $max: { lastPlayedAt: stat.lastPlayedAt },
+          },
+          upsert: true,
+        },
+      }));
 
-      // Advance cursor past the newest item we processed to get the next page
-      cursorAfter = (maxPlayedAtMs || 0) + 1;
+      try {
+        await AlbumStats.bulkWrite(albumOps, { ordered: false });
+      } catch (error: any) {
+        console.error('Error updating album stats:', error.message);
+      }
+    }
+
+    // Update TrackStats in bulk
+    if (trackStatsMap.size > 0) {
+      const trackOps = Array.from(trackStatsMap.values()).map((stat) => ({
+        updateOne: {
+          filter: { userId, trackKey: stat.trackKey },
+          update: {
+            $setOnInsert: { userId, trackKey: stat.trackKey, trackId: stat.trackId },
+            $set: {
+              trackName: stat.trackName,
+              artistName: stat.artistName,
+              albumName: stat.albumName,
+              albumArt: stat.albumArt,
+              durationMs: stat.durationMs,
+            },
+            $inc: { playCount: stat.count },
+            $max: { lastPlayedAt: stat.lastPlayedAt },
+          },
+          upsert: true,
+        },
+      }));
+
+      try {
+        await TrackStats.bulkWrite(trackOps, { ordered: false });
+      } catch (error: any) {
+        console.error('Error updating track stats:', error.message);
+      }
+    }
+
+    // Update UserStatsSummary
+    if (totalInserted > 0) {
+      try {
+        await UserStatsSummary.findOneAndUpdate(
+          { userId },
+          { $inc: { totalScrobbles: totalInserted } },
+          { upsert: true }
+        );
+      } catch (error: any) {
+        console.error('Error updating user stats summary:', error.message);
+      }
     }
 
     res.json({
       success: true,
       inserted: totalInserted,
-      checked: totalChecked,
-      pages,
-      startAfter: latest ? new Date(latest.playedAt).getTime() : null,
-      endAfter: cursorAfter ?? null,
+      checked: items.length,
       items: !CLOUD_ENABLE_SCROBBLES ? itemsForClient : undefined,
     });
   } catch (error: any) {
     console.error('Error syncing recent plays:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ error: 'Failed to sync recent plays' });
+    res.status(error.response?.status || 500).json({ 
+      error: 'Failed to sync recent plays',
+      message: error.response?.data?.error?.message || error.message,
+    });
   }
 });
 

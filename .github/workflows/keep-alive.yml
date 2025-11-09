@@ -2,23 +2,18 @@ name: Keep Render Server Alive
 
 on:
   schedule:
-    # Run every 10 minutes
-    - cron: '*/10 * * * *'
+    # Run every 5 minutes (more frequent to prevent spin-down)
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Server
-        env:
-          SERVER_URL: ${{ secrets.SERVER_URL || 'https://ratesangeet.onrender.com' }}
-          UPTIME_SECRET_KEY: ${{ secrets.UPTIME_SECRET_KEY }}
+      - name: Ping Render Backend
         run: |
-          echo "Pinging server at $SERVER_URL..."
-          RESPONSE=$(curl -s -X POST "$SERVER_URL/api/uptime/ping?key=$UPTIME_SECRET_KEY" \
-            -H "Content-Type: application/json" \
-            -w "\nHTTP_STATUS:%{http_code}")
+          echo "Pinging Render server..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" https://ratesangeet.onrender.com/ping)
           
           HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
           BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS/d')
@@ -26,9 +21,15 @@ jobs:
           echo "Response: $BODY"
           echo "HTTP Status: $HTTP_STATUS"
           
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "✅ Server is alive!"
+          if [ "$HTTP_STATUS" -eq 200 ] && [ "$BODY" = "pong" ]; then
+            echo "✅ Render server is alive!"
           else
-            echo "⚠️ Server returned status $HTTP_STATUS"
+            echo "⚠️ Server returned status $HTTP_STATUS with body: $BODY"
             exit 1
           fi
+      
+      - name: Ping Vercel Frontend (optional)
+        continue-on-error: true
+        run: |
+          echo "Pinging Vercel frontend..."
+          curl -s -o /dev/null -w "Frontend Status: %{http_code}\n" https://your-vercel-url.vercel.app || echo "Frontend not configured yet"

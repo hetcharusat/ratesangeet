@@ -65,7 +65,6 @@ const HomeScreen = () => {
 
   const loadData = async (opts?: { force?: boolean }) => {
     try {
-      console.log('[HomeScreen] Starting to load data for user:', user?.id);
       if (user?.id) {
         // Add timeout wrapper for each call (10 seconds max)
         const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T | null> => {
@@ -75,35 +74,25 @@ const HomeScreen = () => {
           ]);
         };
 
-        console.log('[HomeScreen] Fetching all data...');
         const [reviewsData, statsData, listeningStatsData] = await Promise.all([
           withTimeout(retryWithBackoff(() => getUserReviews(user.id))),
           withTimeout(retryWithBackoff(() => getUserStats(user.id))),
           withTimeout(retryWithBackoff(() => getListeningStats(user.id, accessToken || undefined, { force: opts?.force }))).catch(err => {
-            console.error('[HomeScreen] Listening stats failed:', err);
+            // Silent error - data will be null
             return null;
           }),
         ]);
         
-        console.log('[HomeScreen] Data fetched:', {
-          reviews: reviewsData?.length || 0,
-          stats: statsData,
-          listeningStats: listeningStatsData
-        });
-        
         setReviews(reviewsData || []);
         setStats({ totalReviews: statsData?.totalReviews || 0 });
         setListeningStats(listeningStatsData || null);
-        console.log('[HomeScreen] Data set successfully, loading=false');
       }
     } catch (error) {
-      console.error('[HomeScreen] Error loading data:', error);
-      // Set default values on error
+      // Silent error handling - set defaults
       setReviews([]);
       setStats({ totalReviews: 0 });
       setListeningStats(null);
     } finally {
-      console.log('[HomeScreen] Setting loading to false');
       setLoading(false);
       setRefreshing(false);
     }

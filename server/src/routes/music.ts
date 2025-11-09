@@ -552,7 +552,10 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       const scrobbleFresh = latestPlayedAtMs && cached.lastScrobblePlayedAt ? latestPlayedAtMs <= cached.lastScrobblePlayedAt : true;
       if (ttlValid && scrobbleFresh) {
         cacheHit = true;
-        console.log(`[LISTENING STATS] ✅ Cache HIT for user=${userId} age=${ageMs}ms`);
+        // Only log cache hits in development
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[LISTENING STATS] ✅ Cache HIT for user=${userId} age=${ageMs}ms`);
+        }
         res.setHeader('X-Cache', 'HIT');
         res.setHeader('X-Cache-Age', String(ageMs));
         return res.json({
@@ -565,18 +568,23 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
           },
         });
       }
-      if (!ttlValid) {
-        console.log(`[LISTENING STATS] 🔄 Cache expired (age=${ageMs}ms >= ${STATS_CACHE_TTL}ms)`);
-      } else if (!scrobbleFresh) {
-        console.log(`[LISTENING STATS] 🔄 New scrobble detected; busting cache`);
+      if (process.env.NODE_ENV !== 'production') {
+        if (!ttlValid) {
+          console.log(`[LISTENING STATS] 🔄 Cache expired (age=${ageMs}ms >= ${STATS_CACHE_TTL}ms)`);
+        } else if (!scrobbleFresh) {
+          console.log(`[LISTENING STATS] 🔄 New scrobble detected; busting cache`);
+        }
       }
     }
 
-    if (wantForce) {
+    if (wantForce && process.env.NODE_ENV !== 'production') {
       console.log(`[LISTENING STATS] 🚫 Force bypass requested for user=${userId}`);
     }
 
-    console.log(`[LISTENING STATS] Fetching fresh stats for user: ${userId}`);
+    // Only log in development
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[LISTENING STATS] Fetching fresh stats for user: ${userId}`);
+    }
     const overallStart = Date.now();
     
     // FAST MODE: Only fetch recent scrobbles (last 200) for instant loading
@@ -586,7 +594,7 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       .select('artistName albumName spotifyId durationMs playedAt albumArt') // Only fields we need
       .lean(); 
     
-    console.log(`[LISTENING STATS] Found ${scrobbles.length} scrobbles`);
+    // Removed excessive logging for production performance
 
     // Calculate total listening time in minutes
     const totalMinutes = scrobbles.reduce((sum, scrobble) => {
@@ -794,8 +802,11 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
     // Cache the result (store latest scrobble timestamp for freshness invalidation)
     statsCache.set(cacheKey, { data: responseData, timestamp: Date.now(), lastScrobblePlayedAt: latestPlayedAtMs });
     
-    const totalTime = Date.now() - overallStart;
-    console.log(`[LISTENING STATS] ✅ Total request time: ${totalTime}ms`);
+    // Only log performance in development
+    if (process.env.NODE_ENV !== 'production') {
+      const totalTime = Date.now() - overallStart;
+      console.log(`[LISTENING STATS] ✅ Total request time: ${totalTime}ms`);
+    }
 
     // Generate ETag for this response content
     const etag = `"${crypto.createHash('md5').update(JSON.stringify(responseData)).digest('hex')}"`;
@@ -804,7 +815,6 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
     // Check if client has cached version (If-None-Match header)
     const clientEtag = req.headers['if-none-match'];
     if (clientEtag === etag) {
-      console.log(`[LISTENING STATS] ETag match - returning 304 Not Modified`);
       return res.status(304).end();
     }
 

@@ -34,13 +34,15 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
-// Lightweight request logger for debugging
-app.use((req, _res, next) => {
-  try {
+
+// Lightweight request logger (ONLY in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, _res, next) => {
     console.log(`[REQ] ${req.method} ${req.originalUrl}`);
-  } catch {}
-  next();
-});
+    next();
+  });
+}
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,

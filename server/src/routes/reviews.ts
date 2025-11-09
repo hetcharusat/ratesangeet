@@ -288,7 +288,7 @@ router.get('/:id/reactions/users', async (req: Request, res: Response) => {
       profileImage: u.profileImage,
       username: u.username,
       spotifyId: u.spotifyId,
-      reactionType: review.reactionsByUser.get(String(u._id)) || null,
+      reactionType: review.reactionsByUser?.get(String(u._id)) || null,
     }));
 
     res.json({ users: usersWithReactions });

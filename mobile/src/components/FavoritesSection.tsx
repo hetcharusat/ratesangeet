@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,9 @@ import {
   TouchableOpacity,
   Pressable,
   Dimensions,
+  Animated,
+  Platform,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { Colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
@@ -51,36 +47,35 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   onSave,
   maxItems = 4,
 }) => {
-  const editScale = useSharedValue(1);
-
-  const animatedHeaderStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(editScale.value) }],
-  }));
+  const editScale = useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
-    editScale.value = isEditMode ? 1.05 : 1;
+    Animated.spring(editScale, {
+      toValue: isEditMode ? 1.05 : 1,
+      useNativeDriver: true,
+    }).start();
   }, [isEditMode]);
 
   const renderItem = (item: FavoriteItem) => {
-    const deleteScale = useSharedValue(0);
-    const itemOpacity = useSharedValue(1);
+    const deleteScale = useRef(new Animated.Value(0)).current;
+    const itemOpacity = useRef(new Animated.Value(1)).current;
 
     React.useEffect(() => {
-      deleteScale.value = isEditMode ? withSpring(1) : withTiming(0);
-      itemOpacity.value = isEditMode ? withTiming(0.95) : withTiming(1);
+      Animated.parallel([
+        Animated.spring(deleteScale, {
+          toValue: isEditMode ? 1 : 0,
+          useNativeDriver: true,
+        }),
+        Animated.timing(itemOpacity, {
+          toValue: isEditMode ? 0.95 : 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
     }, [isEditMode]);
 
-    const animatedDeleteStyle = useAnimatedStyle(() => ({
-      transform: [{ scale: deleteScale.value }],
-      opacity: deleteScale.value,
-    }));
-
-    const animatedItemStyle = useAnimatedStyle(() => ({
-      opacity: itemOpacity.value,
-    }));
-
     return (
-      <Animated.View key={item.id} style={[styles.gridItem, animatedItemStyle]}>
+      <Animated.View key={item.id} style={[styles.gridItem, { opacity: itemOpacity }]}>
         <Pressable
           onPress={() => !isEditMode && onItemPress(item)}
           style={styles.itemTouchable}
@@ -101,7 +96,10 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
           </View>
         </Pressable>
         {isEditMode && (
-          <Animated.View style={[styles.deleteButton, animatedDeleteStyle]}>
+          <Animated.View style={[styles.deleteButton, { 
+            transform: [{ scale: deleteScale }],
+            opacity: deleteScale 
+          }]}>
             <TouchableOpacity
               onPress={() => onRemove(item.id)}
               style={styles.deleteTouch}
@@ -131,7 +129,7 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.header, animatedHeaderStyle]}>
+      <Animated.View style={[styles.header, { transform: [{ scale: editScale }] }]}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.headerActions}>
           {isEditMode && (

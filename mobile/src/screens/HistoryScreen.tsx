@@ -97,39 +97,22 @@ const HistoryScreen = () => {
             // Default: if we can't get Spotify data, use 0 (will filter out album)
             let totalTracks = 0;
             
-            console.log('[HistoryScreen] Processing album:', albumName, {
-              albumId: data.albumId,
-              listenedTracks: data.uniqueTracks.size,
-              hasAlbumId: !!data.albumId,
-            });
-            
             // CRITICAL: Always try to get real total tracks from Spotify API
             // Without albumId, we can't show accurate progress
             if (data.albumId && accessToken) {
               try {
                 const albumDetails = await getAlbumDetails(accessToken, data.albumId);
                 totalTracks = albumDetails.total_tracks || albumDetails.tracks?.total || 0;
-                console.log('[HistoryScreen] ✅ Got Spotify details for', albumName, ':', totalTracks, 'tracks');
               } catch (error) {
-                console.log('[HistoryScreen] ❌ Failed to fetch album details for', albumName, ':', error);
                 // Without total tracks, we can't show accurate progress - skip this album
                 return null;
               }
             } else {
-              console.log('[HistoryScreen] ⚠️ No albumId for', albumName, '- skipping (can\'t determine total tracks)');
               return null;
             }
 
             const listenedTracks = data.uniqueTracks.size;
             const completionPercent = totalTracks > 0 ? Math.round((listenedTracks / totalTracks) * 100) : 0;
-
-            console.log('[HistoryScreen] Completion for', albumName, ':', {
-              listenedTracks,
-              totalTracks,
-              completionPercent,
-              totalScrobbles: data.totalScrobbles,
-              passes: totalTracks >= 5 && completionPercent >= 40,
-            });
 
             // STRICT FILTER: Only albums/mixtapes with 5+ total tracks
             // AND user listened to 40%+ tracks (min 2 tracks for 5-track album)
@@ -190,7 +173,7 @@ const HistoryScreen = () => {
         setFilteredAlbums(merged); // Initially show all
       }
     } catch (error) {
-      console.error('Error loading history:', error);
+      // Silent error handling
       setScrobbles([]);
       setAllAlbums([]);
       setFilteredAlbums([]);

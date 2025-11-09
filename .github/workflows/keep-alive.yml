@@ -3,8 +3,14 @@ name: Keep Render Server Alive
 on:
   schedule:
     # Run every 5 minutes (more frequent to prevent spin-down)
+    # Note: Scheduled workflows run on the default branch
     - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual trigger
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/keep-alive.yml'
 
 jobs:
   ping:

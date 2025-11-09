@@ -303,18 +303,18 @@ setTimeout(runArchiveJob, 30000);
 setInterval(runArchiveJob, ARCHIVE_INTERVAL_HOURS * 60 * 60 * 1000);
 
 // ============================================================================
-// BACKGROUND SCROBBLER: Fetch Recently Played for all users every 45 minutes
+// BACKGROUND SCROBBLER: Fetch Recently Played for all users every 30 minutes
 // ============================================================================
 // This keeps scrobbles in sync even when app is closed.
 // - Runs immediately on startup (after 60s to let DB connect)
-// - Then runs every 45 minutes (configurable via BACKGROUND_SCROBBLE_INTERVAL_MS)
+// - Then runs every 30 minutes (configurable via BACKGROUND_SCROBBLE_INTERVAL_MS)
 // - Staggered execution (5s delay between users) to avoid CPU overload
 // - Auto-refreshes expired tokens
 // - Deduplicates using existing unique index
 //
 // Environment variables:
 // - BACKGROUND_SCROBBLE_ENABLED=true (default: true, set to 'false' to disable)
-// - BACKGROUND_SCROBBLE_INTERVAL_MS=2700000 (default: 45 minutes)
+// - BACKGROUND_SCROBBLE_INTERVAL_MS=1800000 (default: 30 minutes)
 // - BACKGROUND_SCROBBLE_USER_DELAY_MS=5000 (default: 5 seconds between users)
 //
 // Compromise: Treats all Recently Played as "scrobbled" (bypasses 40% threshold)

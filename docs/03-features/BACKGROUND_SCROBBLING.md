@@ -24,7 +24,7 @@ App Opens → ScrobbleContext.startPolling()
          → Return new scrobbles count
 ```
 
-### 2. Server-Side Cron Job (Every 45 Minutes)
+### 2. Server-Side Cron Job (Every 30 Minutes)
 **Location**: `server/src/jobs/backgroundScrobbler.ts`
 
 Runs automatically on server:
@@ -38,7 +38,7 @@ Runs automatically on server:
 ```
 Server Startup → 60s delay → startBackgroundScrobbler()
               → Run immediately
-              → Schedule recurring (every 45 min)
+              → Schedule recurring (every 30 min)
               
 For Each User:
   Check Token Expired? → Refresh if needed → Update User record
@@ -98,7 +98,7 @@ No config needed - uses existing `syncRecentPlays()` API call.
 BACKGROUND_SCROBBLE_ENABLED=true  # default: true
 
 # How often to run (milliseconds)
-BACKGROUND_SCROBBLE_INTERVAL_MS=2700000  # default: 45 minutes
+BACKGROUND_SCROBBLE_INTERVAL_MS=1800000  # default: 30 minutes
 
 # Delay between users (milliseconds)
 BACKGROUND_SCROBBLE_USER_DELAY_MS=5000  # default: 5 seconds
@@ -118,14 +118,14 @@ BACKGROUND_SCROBBLE_ENABLED=false
 Spotify's Recently Played API returns maximum 50 tracks.
 
 **Scenarios**:
-- ✅ User plays 30 songs in 45 min → All captured
-- ✅ User plays 50 songs in 45 min → All captured
-- ❌ User plays 80 songs in 45 min → **Only last 50 captured** (30 lost)
+- ✅ User plays 20 songs in 30 min → All captured
+- ✅ User plays 50 songs in 30 min → All captured
+- ❌ User plays 80 songs in 30 min → **Only last 50 captured** (30 lost)
 
 **Mitigation**:
-- 45-minute interval reduces likelihood of >50 plays
+- 30-minute interval reduces likelihood of >50 plays
 - Average song is 3-4 minutes, 50 songs = ~3 hours of listening
-- Most users won't exceed this in 45 minutes
+- Most users won't exceed this in 30 minutes
 
 ### ⚠️ Scrobble Threshold Bypass
 **Compromise**: Treats all Recently Played as "scrobbled"
@@ -253,6 +253,78 @@ npm run dev  # Background scrobbler starts after 60s
    ```
    inserted: 0  // No duplicates
    ```
+
+## 🚨 Render Free Tier Spindown Issue
+
+### ⚠️ Critical Limitation
+**Render free tier servers spin down after 15 minutes of inactivity.**
+
+**What This Means**:
+- Server sleeps if no HTTP requests for 15 minutes
+- Background cron job **STOPS** when server is asleep ❌
+- Cron only runs while server is awake
+
+### ✅ Solution: UptimeRobot Keep-Alive
+**Already implemented in your project!**
+
+**How It Works**:
+1. **UptimeRobot** pings `/ping` endpoint every 5 minutes
+2. Ping keeps server awake 24/7
+3. Background scrobbler continues running
+
+**Setup** (see `docs/03-features/KEEP_ALIVE_SYSTEM.md`):
+1. Create free UptimeRobot account
+2. Add HTTP(S) monitor:
+   - URL: `https://ratesangeet.onrender.com/ping`
+   - Interval: 5 minutes
+3. Server stays awake → Cron runs every 30 minutes ✅
+
+### Verification
+```bash
+# Check /ping endpoint logs
+curl https://ratesangeet.onrender.com/ping
+
+# Response shows server uptime
+{
+  "status": "OK",
+  "uptime": "2h 15m",
+  "totalPings": 27,
+  "lastPing": "2025-11-09T10:30:00Z"
+}
+```
+
+**Without UptimeRobot**:
+- Server sleeps after 15 min inactivity
+- Cron stops running
+- Users miss scrobbles ❌
+
+**With UptimeRobot**:
+- Server never sleeps (pinged every 5 min)
+- Cron runs every 30 min
+- Always-on scrobbling ✅
+
+### Alternative Solutions
+
+#### 1. Upgrade to Render Paid Plan ($7/month)
+- No spindown
+- Always-on servers
+- No need for UptimeRobot
+
+#### 2. External Cron Service
+Use a service like **Cron-Job.org** to trigger endpoint:
+```bash
+# Create endpoint that manually triggers scrobbler
+POST https://ratesangeet.onrender.com/api/admin/trigger-scrobble
+```
+
+**Pros**: Works even if server sleeps  
+**Cons**: Requires custom endpoint, security considerations
+
+#### 3. Client-Only Approach (Fallback)
+If server is down, client-side sync still works:
+- App opens → Syncs last 50 plays
+- No cron needed
+- **Trade-off**: Only syncs when user opens app
 
 ## Monitoring
 

@@ -1,7 +1,7 @@
 /**
  * Background Scrobbler Job
  * 
- * Runs every 45 minutes to fetch Recently Played tracks from Spotify for all users.
+ * Runs every 30 minutes to fetch Recently Played tracks from Spotify for all users.
  * 
  * Key Features:
  * - Fetches last 50 tracks from Spotify Recently Played API
@@ -17,7 +17,7 @@
  * 
  * Environment:
  * - BACKGROUND_SCROBBLE_ENABLED=true (default: true)
- * - BACKGROUND_SCROBBLE_INTERVAL_MS=2700000 (default: 45 minutes)
+ * - BACKGROUND_SCROBBLE_INTERVAL_MS=1800000 (default: 30 minutes)
  * - BACKGROUND_SCROBBLE_USER_DELAY_MS=5000 (default: 5 seconds)
  */
 
@@ -37,7 +37,7 @@ const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_RECENTLY_PLAYED_URL = 'https://api.spotify.com/v1/me/player/recently-played';
 
 const BACKGROUND_SCROBBLE_ENABLED = process.env.BACKGROUND_SCROBBLE_ENABLED !== 'false';
-const BACKGROUND_SCROBBLE_INTERVAL_MS = Number(process.env.BACKGROUND_SCROBBLE_INTERVAL_MS) || 45 * 60 * 1000; // 45 minutes
+const BACKGROUND_SCROBBLE_INTERVAL_MS = Number(process.env.BACKGROUND_SCROBBLE_INTERVAL_MS) || 30 * 60 * 1000; // 30 minutes
 const BACKGROUND_SCROBBLE_USER_DELAY_MS = Number(process.env.BACKGROUND_SCROBBLE_USER_DELAY_MS) || 5000; // 5 seconds between users
 
 interface RecentlyPlayedTrack {
@@ -398,7 +398,8 @@ export function startBackgroundScrobbler() {
     return;
   }
 
-  console.log(`🚀 Background scrobbler enabled (interval: ${BACKGROUND_SCROBBLE_INTERVAL_MS}ms)`);
+  const intervalMinutes = Math.floor(BACKGROUND_SCROBBLE_INTERVAL_MS / 60000);
+  console.log(`🚀 Background scrobbler enabled (interval: ${intervalMinutes} minutes)`);
 
   // Run immediately on startup
   runBackgroundScrobbler().catch((err) => {

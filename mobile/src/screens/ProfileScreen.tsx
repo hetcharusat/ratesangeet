@@ -30,6 +30,8 @@ import {
   MutualFollower,
 } from '../services/api';
 import { Colors } from '../theme/colors';
+import { FavoritesSection } from '../components/FavoritesSection';
+import { FavoritesPickerModal } from '../components/FavoritesPickerModal';
 
 type RouteParams = { userId?: string };
 
@@ -67,16 +69,14 @@ const ProfileScreen = () => {
   const [showFollowingModal, setShowFollowingModal] = useState(false);
   const [followersList, setFollowersList] = useState<Array<{ _id: string; displayName: string; username?: string; profileImage?: string }>>([]);
   const [followingList, setFollowingList] = useState<Array<{ _id: string; displayName: string; username?: string; profileImage?: string }>>([]);
-  const [favoritesEditMode, setFavoritesEditMode] = useState(false);
-  const [favAlbumsSelection, setFavAlbumsSelection] = useState<Array<{ id: string; name: string; artist: string; image?: string }>>([]);
-  const [favTracksSelection, setFavTracksSelection] = useState<Array<{ id: string; name: string; artist: string; image?: string }>>([]);
-  const [savingFavorites, setSavingFavorites] = useState(false);
+  
+  // Favorites edit modes (separate for albums and tracks)
+  const [albumsEditMode, setAlbumsEditMode] = useState(false);
+  const [tracksEditMode, setTracksEditMode] = useState(false);
   
   // Search modal for adding favorites
   const [pickerOpen, setPickerOpen] = useState<null | 'album' | 'track'>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [savingFavorites, setSavingFavorites] = useState(false);
 
   // Edit form state
   const [editBio, setEditBio] = useState('');
@@ -87,30 +87,6 @@ const ProfileScreen = () => {
 
   const resolvedUserId = userIdParam || user?.id;
   const isOwnProfile = !userIdParam || userIdParam === user?.id;
-  
-  // Search within modal for picking favorites
-  useEffect(() => {
-    let active = true;
-    const run = async () => {
-      if (!pickerOpen || !searchQuery || !accessToken) {
-        setSearchResults([]);
-        return;
-      }
-      try {
-        setSearchLoading(true);
-        const type = pickerOpen === 'album' ? 'album' : 'track';
-        const data = await searchMusic(accessToken, searchQuery, type);
-        const items = pickerOpen === 'album' ? (data.albums?.items || []) : (data.tracks?.items || []);
-        if (active) setSearchResults(items);
-      } catch {
-        if (active) setSearchResults([]);
-      } finally {
-        if (active) setSearchLoading(false);
-      }
-    };
-    const t = setTimeout(run, 350);
-    return () => { active = false; clearTimeout(t); };
-  }, [pickerOpen, searchQuery, accessToken]);
 
   // Reset userId param when tapping Profile tab while viewing another user
   useEffect(() => {
@@ -138,10 +114,6 @@ const ProfileScreen = () => {
       ]);
 
       setProfile(profileData);
-      if (favoritesEditMode) {
-        setFavAlbumsSelection(profileData.favAlbums || []);
-        setFavTracksSelection(profileData.favTracks || []);
-      }
       setActivity(activityData);
       setEditBio(profileData.bio || '');
       setEditInstagram(profileData.instagramUsername || '');
@@ -162,69 +134,25 @@ const ProfileScreen = () => {
     }
   };
 
-  const toggleAlbumSelection = (album: { id: string; name: string; artist: string; image?: string }) => {
-    setFavAlbumsSelection((prev) => {
-      const exists = prev.find((a) => a.id === album.id);
-      if (exists) return prev.filter((a) => a.id !== album.id);
-      // Enforce max 4 favorite albums
-      if (prev.length >= 4) return prev;
-      return [...prev, album];
-    });
-  };
-
-  const toggleTrackSelection = (track: { id: string; name: string; artist: string; image?: string }) => {
-    setFavTracksSelection((prev) => {
-      const exists = prev.find((t) => t.id === track.id);
-      if (exists) return prev.filter((t) => t.id !== track.id);
-      // Enforce max 4 favorite tracks
-      if (prev.length >= 4) return prev;
-      return [...prev, track];
-    });
-  };
-
-  const startFavoritesEdit = () => {
-    if (!profile) return;
-    setFavAlbumsSelection(profile.favAlbums || []);
-    setFavTracksSelection(profile.favTracks || []);
-    setFavoritesEditMode(true);
-  };
-
-  const cancelFavoritesEdit = () => {
-    setFavoritesEditMode(false);
-    setFavAlbumsSelection([]);
-    setFavTracksSelection([]);
-  };
-
-  const saveFavorites = async () => {
-    if (!user?.id || !profile) return;
-    try {
-      setSavingFavorites(true);
-      const res = await updateFavorites(user.id, favAlbumsSelection, favTracksSelection);
-      setProfile({ ...profile, favAlbums: res.favAlbums, favTracks: res.favTracks });
-      cancelFavoritesEdit();
-    } catch {
-      // Silently ignore save error; user can retry
-    } finally {
-      setSavingFavorites(false);
-    }
-  };
-
-  const applyFavorite = async (item: any) => {
+  // Favorites handlers
+  const handleAddFavorite = async (item: { id: string; name: string; artist: string; image?: string }) => {
     if (!user?.id || !profile || !pickerOpen) return;
+    
     const favAlbums = profile.favAlbums || [];
     const favTracks = profile.favTracks || [];
-    const shaped = pickerOpen === 'album'
-      ? { id: item.id, name: item.name, artist: (item.artists || [])[0]?.name || '', image: item.images?.[0]?.url }
-      : { id: item.id, name: item.name, artist: (item.artists || []).map((a: any) => a.name).join(', '), image: item.album?.images?.[0]?.url };
-    const nextAlbums = pickerOpen === 'album' ? [...favAlbums.filter((x) => x.id !== shaped.id), shaped].slice(0, 4) : favAlbums;
-    const nextTracks = pickerOpen === 'track' ? [...favTracks.filter((x) => x.id !== shaped.id), shaped].slice(0, 4) : favTracks;
+    
+    const nextAlbums = pickerOpen === 'album' 
+      ? [...favAlbums.filter((x) => x.id !== item.id), item].slice(0, 4) 
+      : favAlbums;
+    const nextTracks = pickerOpen === 'track' 
+      ? [...favTracks.filter((x) => x.id !== item.id), item].slice(0, 4) 
+      : favTracks;
+    
     try {
       setSavingFavorites(true);
       const res = await updateFavorites(user.id, nextAlbums, nextTracks);
       setProfile({ ...profile, favAlbums: res.favAlbums, favTracks: res.favTracks });
       setPickerOpen(null);
-      setSearchQuery('');
-      setSearchResults([]);
     } catch {
       // ignore
     } finally {
@@ -232,12 +160,14 @@ const ProfileScreen = () => {
     }
   };
 
-  const removeFavorite = async (kind: 'album' | 'track', id: string) => {
+  const handleRemoveFavorite = async (kind: 'album' | 'track', id: string) => {
     if (!user?.id || !profile) return;
+    
     const favAlbums = profile.favAlbums || [];
     const favTracks = profile.favTracks || [];
     const nextAlbums = kind === 'album' ? favAlbums.filter((x) => x.id !== id) : favAlbums;
     const nextTracks = kind === 'track' ? favTracks.filter((x) => x.id !== id) : favTracks;
+    
     try {
       setSavingFavorites(true);
       const res = await updateFavorites(user.id, nextAlbums, nextTracks);
@@ -246,6 +176,28 @@ const ProfileScreen = () => {
       // ignore
     } finally {
       setSavingFavorites(false);
+    }
+  };
+
+  const handleSaveFavorites = (kind: 'album' | 'track') => {
+    // Turn off edit mode after save
+    if (kind === 'album') setAlbumsEditMode(false);
+    else setTracksEditMode(false);
+  };
+
+  const handleItemPress = (kind: 'album' | 'track', item: { id: string; name: string; artist?: string; image?: string }) => {
+    if (kind === 'album') {
+      navigation.navigate('AlbumDetail' as any, { albumId: item.id } as any);
+    } else {
+      navigation.navigate('AddReview' as any, {
+        itemType: 'track',
+        track: {
+          id: item.id,
+          name: item.name,
+          artists: [{ name: item.artist || 'Unknown Artist' }],
+          album: { images: [{ url: item.image || '' }] },
+        },
+      } as any);
     }
   };
 
@@ -497,85 +449,76 @@ const ProfileScreen = () => {
       )}
 
       {/* Favorites Section */}
-      <View style={styles.favoritesSection}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Favorite Albums</Text>
-          {isOwnProfile && (profile.favAlbums?.length || 0) < 4 && (
-            <TouchableOpacity onPress={() => setPickerOpen('album')} style={styles.smallEditButton}>
-              <Text style={styles.smallEditButtonText}>+ Add</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {(profile.favAlbums?.length || 0) === 0 && !isOwnProfile ? (
-          <Text style={styles.emptyStateText}>No favorites yet</Text>
-        ) : (
-          <View style={styles.favoritesGrid}>
-            {(profile.favAlbums || []).map((album) => (
-              <View key={album.id} style={styles.favoriteItem}>
-                <TouchableOpacity onPress={() => navigation.navigate('AlbumDetail' as any, { albumId: album.id } as any)}>
-                  <Image source={{ uri: album.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
-                  <Text style={styles.favoriteTitle} numberOfLines={1}>{album.name}</Text>
-                  <Text style={styles.favoriteArtist} numberOfLines={1}>{album.artist}</Text>
-                </TouchableOpacity>
-                {isOwnProfile && (
-                  <TouchableOpacity style={styles.removeBadge} onPress={() => removeFavorite('album', album.id)}>
-                    <Text style={styles.removeBadgeText}>×</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-            {isOwnProfile && (profile.favAlbums?.length || 0) < 4 && (
-              <TouchableOpacity style={[styles.favoriteItem, styles.addTile]} onPress={() => setPickerOpen('album')}>
-                <Text style={styles.addTileText}>+ Add Album</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
+      {isOwnProfile && (
+        <>
+          <FavoritesSection
+            title="Favorite Albums"
+            data={profile.favAlbums || []}
+            isEditMode={albumsEditMode}
+            onToggleEdit={() => setAlbumsEditMode(!albumsEditMode)}
+            onRemove={(id) => handleRemoveFavorite('album', id)}
+            onAdd={() => setPickerOpen('album')}
+            onItemPress={(item) => handleItemPress('album', item)}
+            onSave={() => handleSaveFavorites('album')}
+            maxItems={4}
+          />
+          
+          <FavoritesSection
+            title="Favorite Tracks"
+            data={profile.favTracks || []}
+            isEditMode={tracksEditMode}
+            onToggleEdit={() => setTracksEditMode(!tracksEditMode)}
+            onRemove={(id) => handleRemoveFavorite('track', id)}
+            onAdd={() => setPickerOpen('track')}
+            onItemPress={(item) => handleItemPress('track', item)}
+            onSave={() => handleSaveFavorites('track')}
+            maxItems={4}
+          />
+        </>
+      )}
 
-      <View style={styles.favoritesSection}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Favorite Tracks</Text>
-          {isOwnProfile && (profile.favTracks?.length || 0) < 4 && (
-            <TouchableOpacity onPress={() => setPickerOpen('track')} style={styles.smallEditButton}>
-              <Text style={styles.smallEditButtonText}>+ Add</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {(profile.favTracks?.length || 0) === 0 && !isOwnProfile ? (
-          <Text style={styles.emptyStateText}>No favorites yet</Text>
-        ) : (
-          <View style={styles.favoritesGrid}>
-            {(profile.favTracks || []).map((track) => (
-              <View key={track.id} style={styles.favoriteItem}>
-                <TouchableOpacity onPress={() => navigation.navigate('AddReview' as any, {
-                  itemType: 'track',
-                  track: {
-                    id: track.id,
-                    name: track.name,
-                    artists: [{ name: track.artist }],
-                    album: { images: [{ url: track.image || '' }] },
-                  },
-                } as any)}>
-                  <Image source={{ uri: track.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
-                  <Text style={styles.favoriteTitle} numberOfLines={1}>{track.name}</Text>
-                  <Text style={styles.favoriteArtist} numberOfLines={1}>{track.artist}</Text>
-                </TouchableOpacity>
-                {isOwnProfile && (
-                  <TouchableOpacity style={styles.removeBadge} onPress={() => removeFavorite('track', track.id)}>
-                    <Text style={styles.removeBadgeText}>×</Text>
-                  </TouchableOpacity>
-                )}
+      {/* Favorites for other profiles (non-editable) */}
+      {!isOwnProfile && (
+        <>
+          <View style={styles.favoritesSection}>
+            <Text style={styles.sectionTitle}>Favorite Albums</Text>
+            {(profile.favAlbums?.length || 0) === 0 ? (
+              <Text style={styles.emptyStateText}>No favorites yet</Text>
+            ) : (
+              <View style={styles.favoritesGrid}>
+                {(profile.favAlbums || []).map((album) => (
+                  <View key={album.id} style={styles.favoriteItem}>
+                    <TouchableOpacity onPress={() => handleItemPress('album', album)}>
+                      <Image source={{ uri: album.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
+                      <Text style={styles.favoriteTitle} numberOfLines={1}>{album.name}</Text>
+                      <Text style={styles.favoriteArtist} numberOfLines={1}>{album.artist}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-            ))}
-            {isOwnProfile && (profile.favTracks?.length || 0) < 4 && (
-              <TouchableOpacity style={[styles.favoriteItem, styles.addTile]} onPress={() => setPickerOpen('track')}>
-                <Text style={styles.addTileText}>+ Add Track</Text>
-              </TouchableOpacity>
             )}
           </View>
-        )}
-      </View>
+
+          <View style={styles.favoritesSection}>
+            <Text style={styles.sectionTitle}>Favorite Tracks</Text>
+            {(profile.favTracks?.length || 0) === 0 ? (
+              <Text style={styles.emptyStateText}>No favorites yet</Text>
+            ) : (
+              <View style={styles.favoritesGrid}>
+                {(profile.favTracks || []).map((track) => (
+                  <View key={track.id} style={styles.favoriteItem}>
+                    <TouchableOpacity onPress={() => handleItemPress('track', track)}>
+                      <Image source={{ uri: track.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
+                      <Text style={styles.favoriteTitle} numberOfLines={1}>{track.name}</Text>
+                      <Text style={styles.favoriteArtist} numberOfLines={1}>{track.artist}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </>
+      )}
 
       {/* Activity Section */}
       <View style={styles.activitySection}>
@@ -728,50 +671,13 @@ const ProfileScreen = () => {
       </Modal>
 
       {/* Picker Modal for adding favorites */}
-      <Modal visible={!!pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Favorite {pickerOpen === 'album' ? 'Album' : 'Track'}</Text>
-              <TouchableOpacity onPress={() => setPickerOpen(null)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder={`Search ${pickerOpen === 'album' ? 'albums' : 'tracks'}...`}
-              placeholderTextColor={Colors.textSecondary}
-              style={styles.searchInput}
-            />
-            {searchLoading ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
-            ) : (
-              <FlatList
-                data={searchResults}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.resultRow} onPress={() => applyFavorite(item)}>
-                    <Image
-                      source={{ uri: (item.images?.[0]?.url) || (item.album?.images?.[0]?.url) || 'https://via.placeholder.com/50' }}
-                      style={styles.resultArt}
-                    />
-                    <View style={styles.resultInfo}>
-                      <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.resultSub} numberOfLines={1}>
-                        {(item.artists || []).map((a: any) => a.name).join(', ')}
-                      </Text>
-                    </View>
-                    <Text style={styles.pickText}>Add</Text>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={<Text style={styles.emptyHint}>No results</Text>}
-                style={styles.resultsList}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
+      <FavoritesPickerModal
+        visible={!!pickerOpen}
+        type={pickerOpen || 'album'}
+        accessToken={accessToken || ''}
+        onClose={() => setPickerOpen(null)}
+        onSelect={handleAddFavorite}
+      />
     </ScrollView>
   );
 };

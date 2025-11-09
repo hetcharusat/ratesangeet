@@ -12,6 +12,13 @@ import User from '../models/User.js';
 const router = Router();
 const CLOUD_ENABLE_SCROBBLES = (process.env.CLOUD_ENABLE_SCROBBLES ?? 'true') !== 'false';
 const CLOUD_SCROBBLE_RETENTION_DAYS = Number(process.env.CLOUD_SCROBBLE_RETENTION_DAYS) || 30;
+const SKIP_DETECTION_ENABLED = process.env.BACKGROUND_SCROBBLE_SKIP_DETECTION !== 'false'; // Enable by default
+
+// Skip detection constants (same as backgroundScrobbler)
+const SCROBBLE_THRESHOLD = 0.4;
+const GRACE_MARGIN_MS = 5000;
+const PAUSE_DETECTION_MULTIPLIER = 1.5;
+const MAX_RECENT_TRACK_AGE_MS = 120000;
 
 // In-memory cache for listening stats.
 // Improved strategy:
@@ -844,6 +851,68 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Filter out skipped tracks using time gap analysis (for sync-recent endpoint)
+ */
+function filterSkippedTracksForSync(items: any[]): any[] {
+  if (items.length === 0) {
+    return items;
+  }
+
+  const filtered: any[] = [];
+  const nowMs = Date.now();
+
+  // Sort by played_at ascending (oldest first)
+  const sorted = [...items].sort((a, b) =>
+    new Date(a.played_at).getTime() - new Date(b.played_at).getTime()
+  );
+
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    const next = sorted[i + 1];
+
+    if (!current?.track || !current?.played_at) continue;
+
+    const currentStartMs = new Date(current.played_at).getTime();
+    const currentDuration = current.track.duration_ms || 0;
+    const scrobbleThreshold = currentDuration * SCROBBLE_THRESHOLD;
+
+    // First track: assume listened
+    if (i === 0) {
+      filtered.push(current);
+      continue;
+    }
+
+    // Last track: compare with current time
+    if (!next) {
+      const timeSinceStartMs = nowMs - currentStartMs;
+
+      if (timeSinceStartMs >= MAX_RECENT_TRACK_AGE_MS || 
+          timeSinceStartMs >= scrobbleThreshold - GRACE_MARGIN_MS) {
+        filtered.push(current);
+      }
+      continue;
+    }
+
+    // Normal case: compare with next track
+    const nextStartMs = new Date(next.played_at).getTime();
+    const actualPlaybackMs = nextStartMs - currentStartMs;
+
+    // Pause detection
+    if (actualPlaybackMs > currentDuration * PAUSE_DETECTION_MULTIPLIER) {
+      filtered.push(current);
+      continue;
+    }
+
+    // Grace margin check
+    if (actualPlaybackMs >= scrobbleThreshold - GRACE_MARGIN_MS) {
+      filtered.push(current);
+    }
+  }
+
+  return filtered;
+}
+
 // Sync scrobbles from Spotify 'recently played' so plays while the app was closed are captured
 router.post('/sync-recent', async (req: Request, res: Response) => {
   const { accessToken, userId } = req.body as { accessToken?: string; userId?: string };
@@ -868,16 +937,21 @@ router.post('/sync-recent', async (req: Request, res: Response) => {
         success: true,
         inserted: 0,
         checked: 0,
+        skipped: 0,
         items: [],
       });
     }
+
+    // Apply skip detection filter
+    const filteredItems = SKIP_DETECTION_ENABLED ? filterSkippedTracksForSync(items) : items;
+    const skippedCount = items.length - filteredItems.length;
 
     let totalInserted = 0;
     const albumStatsMap = new Map<string, any>();
     const trackStatsMap = new Map<string, any>();
     const itemsForClient: any[] = [];
 
-    for (const entry of items) {
+    for (const entry of filteredItems) {
       const track = entry?.track;
       const playedAtStr = entry?.played_at;
       if (!track || !playedAtStr) continue;
@@ -1049,6 +1123,7 @@ router.post('/sync-recent', async (req: Request, res: Response) => {
       success: true,
       inserted: totalInserted,
       checked: items.length,
+      skipped: skippedCount,
       items: !CLOUD_ENABLE_SCROBBLES ? itemsForClient : undefined,
     });
   } catch (error: any) {

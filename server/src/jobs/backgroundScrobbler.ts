@@ -39,6 +39,13 @@ const SPOTIFY_RECENTLY_PLAYED_URL = 'https://api.spotify.com/v1/me/player/recent
 const BACKGROUND_SCROBBLE_ENABLED = process.env.BACKGROUND_SCROBBLE_ENABLED !== 'false';
 const BACKGROUND_SCROBBLE_INTERVAL_MS = Number(process.env.BACKGROUND_SCROBBLE_INTERVAL_MS) || 30 * 60 * 1000; // 30 minutes
 const BACKGROUND_SCROBBLE_USER_DELAY_MS = Number(process.env.BACKGROUND_SCROBBLE_USER_DELAY_MS) || 5000; // 5 seconds between users
+const SKIP_DETECTION_ENABLED = process.env.BACKGROUND_SCROBBLE_SKIP_DETECTION !== 'false'; // Enable by default
+
+// Skip detection constants
+const SCROBBLE_THRESHOLD = 0.4;           // 40% of track duration
+const GRACE_MARGIN_MS = 5000;             // 5 seconds grace for timing imprecision
+const PAUSE_DETECTION_MULTIPLIER = 1.5;   // 150% of duration = pause detected
+const MAX_RECENT_TRACK_AGE_MS = 120000;   // 2 minutes (for last track evaluation)
 
 interface RecentlyPlayedTrack {
   track: {
@@ -120,12 +127,104 @@ async function fetchRecentlyPlayed(accessToken: string, limit = 50): Promise<Rec
 }
 
 /**
+ * Filter out skipped tracks using time gap analysis
+ * Applies 40% scrobble threshold by comparing timestamps of consecutive tracks
+ */
+function filterSkippedTracks(tracks: RecentlyPlayedTrack[], spotifyId: string): RecentlyPlayedTrack[] {
+  if (!SKIP_DETECTION_ENABLED || tracks.length === 0) {
+    return tracks;
+  }
+
+  const filtered: RecentlyPlayedTrack[] = [];
+  const nowMs = Date.now();
+
+  // Sort by played_at ascending (oldest first) for easier logic
+  const sorted = [...tracks].sort((a, b) =>
+    new Date(a.played_at).getTime() - new Date(b.played_at).getTime()
+  );
+
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    const next = sorted[i + 1];
+
+    const currentStartMs = new Date(current.played_at).getTime();
+    const currentDuration = current.track.duration_ms;
+    const scrobbleThreshold = currentDuration * SCROBBLE_THRESHOLD;
+
+    // EDGE CASE 1: First track (oldest in list)
+    // We don't know what came before it, so assume it was listened to
+    if (i === 0) {
+      filtered.push(current);
+      console.log(`  ✅ [${spotifyId}] First track (assume listened): ${current.track.name}`);
+      continue;
+    }
+
+    // EDGE CASE 2: Last track (most recent)
+    // Compare with current time to see if enough time has passed
+    if (!next) {
+      const timeSinceStartMs = nowMs - currentStartMs;
+
+      // If track is "old enough" (> 2 min ago), likely finished or played enough
+      if (timeSinceStartMs >= MAX_RECENT_TRACK_AGE_MS) {
+        filtered.push(current);
+        console.log(`  ✅ [${spotifyId}] Last track (old enough): ${current.track.name} (${Math.floor(timeSinceStartMs / 1000)}s ago)`);
+      } else if (timeSinceStartMs >= scrobbleThreshold - GRACE_MARGIN_MS) {
+        // Enough time passed to reach scrobble threshold
+        filtered.push(current);
+        console.log(`  ✅ [${spotifyId}] Last track (threshold reached): ${current.track.name} (${Math.floor(timeSinceStartMs / 1000)}s ago)`);
+      } else {
+        // Too recent - wait for next sync
+        console.log(`  ⏭️  [${spotifyId}] Last track (too recent): ${current.track.name} (${Math.floor(timeSinceStartMs / 1000)}s ago, need ${Math.floor((scrobbleThreshold - GRACE_MARGIN_MS) / 1000)}s)`);
+      }
+      continue;
+    }
+
+    // NORMAL CASE: Compare with next track
+    const nextStartMs = new Date(next.played_at).getTime();
+    const actualPlaybackMs = nextStartMs - currentStartMs;
+
+    // EDGE CASE 3: Long pause detection
+    // If gap is 50%+ longer than track duration, assume full listen + pause
+    if (actualPlaybackMs > currentDuration * PAUSE_DETECTION_MULTIPLIER) {
+      filtered.push(current);
+      console.log(`  ✅ [${spotifyId}] Full listen (pause detected): ${current.track.name} (gap: ${Math.floor(actualPlaybackMs / 1000)}s, duration: ${Math.floor(currentDuration / 1000)}s)`);
+      continue;
+    }
+
+    // EDGE CASE 4: Timing precision (grace margin)
+    // Count if within grace margin of threshold
+    if (actualPlaybackMs >= scrobbleThreshold - GRACE_MARGIN_MS) {
+      filtered.push(current);
+      const percent = Math.floor((actualPlaybackMs / currentDuration) * 100);
+      console.log(`  ✅ [${spotifyId}] Scrobble: ${current.track.name} (played ${Math.floor(actualPlaybackMs / 1000)}s / ${Math.floor(currentDuration / 1000)}s = ${percent}%)`);
+    } else {
+      const percent = Math.floor((actualPlaybackMs / currentDuration) * 100);
+      console.log(`  ⏭️  [${spotifyId}] Skip: ${current.track.name} (played ${Math.floor(actualPlaybackMs / 1000)}s / ${Math.floor(currentDuration / 1000)}s = ${percent}%, need ${Math.floor(SCROBBLE_THRESHOLD * 100)}%)`);
+    }
+  }
+
+  const skippedCount = tracks.length - filtered.length;
+  console.log(`  📊 [${spotifyId}] Skip detection: ${filtered.length} scrobbles, ${skippedCount} skipped`);
+
+  return filtered;
+}
+
+/**
  * Process recently played tracks for a user
+ * - Filters skipped tracks using time gap analysis
  * - Saves new scrobbles to DB (deduplication via unique index)
  * - Updates aggregate stats (AlbumStats, TrackStats, UserStatsSummary)
  */
-async function processUserScrobbles(userId: mongoose.Types.ObjectId, tracks: RecentlyPlayedTrack[]): Promise<number> {
+async function processUserScrobbles(userId: mongoose.Types.ObjectId, tracks: RecentlyPlayedTrack[], spotifyId: string): Promise<number> {
   if (!tracks || tracks.length === 0) {
+    return 0;
+  }
+
+  // Apply skip detection filter
+  const filteredTracks = filterSkippedTracks(tracks, spotifyId);
+
+  if (filteredTracks.length === 0) {
+    console.log(`  ⚠️  [${spotifyId}] All tracks filtered out (all skipped)`);
     return 0;
   }
 
@@ -133,7 +232,7 @@ async function processUserScrobbles(userId: mongoose.Types.ObjectId, tracks: Rec
   const albumStatsMap = new Map<string, any>();
   const trackStatsMap = new Map<string, any>();
 
-  for (const item of tracks) {
+  for (const item of filteredTracks) {
     const { track, played_at } = item;
     const spotifyId = track.id;
     const trackName = track.name;
@@ -325,7 +424,7 @@ async function processUser(user: any): Promise<{ success: boolean; newScrobbles:
     }
 
     // Process tracks and save scrobbles
-    const newScrobbles = await processUserScrobbles(userId, tracks);
+    const newScrobbles = await processUserScrobbles(userId, tracks, spotifyId);
 
     console.log(`✅ User ${spotifyId}: ${newScrobbles} new scrobbles from ${tracks.length} tracks${tokenRefreshed ? ' (token refreshed)' : ''}`);
     return { success: true, newScrobbles };

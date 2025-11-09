@@ -1,17 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { updateReview, deleteReview, Review, getReviewComments, addReviewComment, ReviewComment, deleteReviewComment, getAlbumDetails, Track } from '../services/api';
+import { updateReview, deleteReview, getReviewComments, addReviewComment, deleteReviewComment, getAlbumDetails } from '../services/api';
 import Colors from '../theme/colors';
 import StarRating from 'react-native-star-rating-widget';
 
-interface ReviewDetailScreenProps {
-  route: any;
-  navigation: any;
-}
-
-const ReviewDetailScreen = ({ route, navigation }: ReviewDetailScreenProps) => {
+const ReviewDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { user, accessToken } = useAuth();
   const { review } = route.params;
   const [isEditing, setIsEditing] = useState(false);
@@ -58,7 +52,7 @@ const ReviewDetailScreen = ({ route, navigation }: ReviewDetailScreenProps) => {
         if (!accessToken) return;
         const details = await getAlbumDetails(accessToken, review.spotifyId);
         if (mounted) setAlbumDetails(details);
-      } catch (e) {
+      } catch {
         if (mounted) setAlbumError('Unable to load album details');
       } finally {
         if (mounted) setAlbumLoading(false);
@@ -149,7 +143,7 @@ const ReviewDetailScreen = ({ route, navigation }: ReviewDetailScreenProps) => {
       const created = await addReviewComment(review._id, user.id, text);
       setComments((prev) => [...prev, created]);
       setNewComment('');
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to post comment');
     } finally {
       setPosting(false);
@@ -208,7 +202,22 @@ const ReviewDetailScreen = ({ route, navigation }: ReviewDetailScreenProps) => {
 
         <Text style={styles.itemName}>{review.itemName}</Text>
         <Text style={styles.artistName}>{review.artistName}</Text>
-        <Text style={styles.itemType}>{review.itemType === 'album' ? '💿 Album' : '🎵 Track'}</Text>
+        <View style={styles.typeRow}>
+          <Text style={styles.itemType}>{review.itemType === 'album' ? '💿 Album' : '🎵 Track'}</Text>
+          {!!review.spotifyId && (
+            <TouchableOpacity
+              style={styles.spotifyButton}
+              onPress={() => {
+                const url = review.itemType === 'album'
+                  ? `https://open.spotify.com/album/${review.spotifyId}`
+                  : `https://open.spotify.com/track/${review.spotifyId}`;
+                Linking.openURL(url);
+              }}
+            >
+              <Text style={styles.spotifyButtonText}>Open in Spotify</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {renderStars()}
 
@@ -407,6 +416,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1DB954',
     marginBottom: 20,
+  },
+  typeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  spotifyButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#1DB95422',
+    borderWidth: 1,
+    borderColor: '#1DB954',
+  },
+  spotifyButtonText: {
+    color: '#1DB954',
+    fontWeight: '600',
+    fontSize: 12,
   },
   starsContainer: {
     alignItems: 'center',

@@ -1,581 +1,1035 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Alert, TextInput, FlatList, Modal, ScrollView, SafeAreaView, StatusBar } from 'react-native';
-import { getUserProfile, followUser, unfollowUser, updateUsername, updateFavorites, searchMusic, getUserReviews, Review } from '../services/api';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Modal,
+  FlatList,
+  Linking,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import Colors from '../theme/colors';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import {
+  getUserProfile,
+  followUser,
+  unfollowUser,
+  getUserActivity,
+  getMutualFollowers,
+  getFollowers,
+  getFollowing,
+  updateUserProfile,
+  updateFavorites,
+  UserActivity,
+  MutualFollower,
+} from '../services/api';
+import { Colors } from '../theme/colors';
 
-interface ProfileScreenProps {
-  route: any;
-  navigation: any;
+type RouteParams = { userId?: string };
+
+interface ProfileData {
+  _id: string;
+  displayName: string;
+  username?: string;
+  profileImage?: string;
+  bio?: string;
+  instagramUsername?: string;
+  twitterHandle?: string;
+  location?: string;
+  favAlbums?: Array<{ id: string; name: string; artist: string; image?: string }>;
+  favTracks?: Array<{ id: string; name: string; artist: string; image?: string }>;
+  followersCount: number;
+  followingCount: number;
+  isFollowing: boolean;
 }
 
-const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
-  const { user, accessToken, refreshToken, setAuth } = useAuth();
-  const userIdParam = (route?.params && (route.params as any).userId) as string | undefined;
-  const resolvedUserId = userIdParam || user?.id;
-  const [profile, setProfile] = useState<any>(null);
+const ProfileScreen = () => {
+  const { user } = useAuth();
+  const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<Record<string, RouteParams>, string>>();
+  const userIdParam = route.params?.userId;
+
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [activity, setActivity] = useState<UserActivity | null>(null);
+  const [mutualFollowers, setMutualFollowers] = useState<MutualFollower[]>([]);
+  const [mutualCount, setMutualCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [userReviews, setUserReviews] = useState<Review[]>([]);
-  const [editingUsername, setEditingUsername] = useState(false);
-  const [pendingUsername, setPendingUsername] = useState('');
-  const [pickerOpen, setPickerOpen] = useState<null | 'album' | 'track'>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showMutualModal, setShowMutualModal] = useState(false);
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [showFollowingModal, setShowFollowingModal] = useState(false);
+  const [followersList, setFollowersList] = useState<Array<{ _id: string; displayName: string; username?: string; profileImage?: string }>>([]);
+  const [followingList, setFollowingList] = useState<Array<{ _id: string; displayName: string; username?: string; profileImage?: string }>>([]);
+  const [favoritesEditMode, setFavoritesEditMode] = useState(false);
+  const [favAlbumsSelection, setFavAlbumsSelection] = useState<Array<{ id: string; name: string; artist: string; image?: string }>>([]);
+  const [favTracksSelection, setFavTracksSelection] = useState<Array<{ id: string; name: string; artist: string; image?: string }>>([]);
+  const [savingFavorites, setSavingFavorites] = useState(false);
 
-  const isSelf = !!user?.id && user?.id === resolvedUserId;
+  // Edit form state
+  const [editBio, setEditBio] = useState('');
+  const [editInstagram, setEditInstagram] = useState('');
+  const [editTwitter, setEditTwitter] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // ROOT FIX: Reset to own profile when tab is pressed from another user's profile
+  const resolvedUserId = userIdParam || user?.id;
+  const isOwnProfile = !userIdParam || userIdParam === user?.id;
+
+  // Reset userId param when tapping Profile tab while viewing another user
   useEffect(() => {
-    const unsubscribe = navigation.addListener('tabPress', (e: any) => {
-      // If currently viewing another user's profile, reset to own profile
+    const unsubscribe = navigation.addListener('tabPress', (_e: any) => {
       if (userIdParam && userIdParam !== user?.id) {
-        console.log('[ProfileScreen] Tab pressed while viewing other user, resetting to own profile');
         navigation.setParams({ userId: undefined });
       }
     });
-
     return unsubscribe;
   }, [navigation, userIdParam, user?.id]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [resolvedUserId])
+  );
+
   const loadProfile = async () => {
-    // ROOT FIX: Don't attempt to load profile if no user ID is available
-    if (!resolvedUserId) {
-      console.log('[ProfileScreen] No userId available, skipping profile load');
-      setLoading(false);
-      return;
-    }
+    if (!resolvedUserId) return;
     try {
-      console.log('[ProfileScreen] Loading profile for user:', resolvedUserId);
       setLoading(true);
-      const data = await getUserProfile(resolvedUserId, user?.id);
-      setProfile(data);
-      console.log('[ProfileScreen] Profile loaded successfully');
-    } catch (e: any) {
-      console.error('[ProfileScreen] Failed to load profile:', e?.response?.status, e?.response?.data || e?.message);
-      Alert.alert('Error', `Failed to load profile: ${e?.response?.data?.error || e?.message || 'Unknown error'}`);
+      const [profileData, activityData] = await Promise.all([
+        getUserProfile(resolvedUserId, user?.id),
+        getUserActivity(resolvedUserId, 5),
+      ]);
+
+      setProfile(profileData);
+      if (favoritesEditMode) {
+        setFavAlbumsSelection(profileData.favAlbums || []);
+        setFavTracksSelection(profileData.favTracks || []);
+      }
+      setActivity(activityData);
+      setEditBio(profileData.bio || '');
+      setEditInstagram(profileData.instagramUsername || '');
+      setEditTwitter(profileData.twitterHandle || '');
+      setEditLocation(profileData.location || '');
+
+      // Load mutual followers if viewing another profile
+      if (!isOwnProfile && user?.id) {
+        const mutualData = await getMutualFollowers(resolvedUserId, user.id);
+        setMutualFollowers(mutualData.mutualFollowers);
+        setMutualCount(mutualData.count);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // ROOT FIX: Guard against loading before user ID is available
-  // Watch userIdParam and user?.id to detect navigation changes
-  useEffect(() => {
-    if (!resolvedUserId) {
-      console.log('[ProfileScreen] Skipping load: no user ID available');
-      setLoading(false); // Stop loading spinner if we're waiting for auth
-      return;
-    }
-    loadProfile();
-  }, [userIdParam, user?.id]);
-
-  useEffect(() => {
-    const loadReviews = async () => {
-      if (!resolvedUserId) return;
-      try {
-        const r = await getUserReviews(resolvedUserId);
-        setUserReviews(r || []);
-      } catch {
-        setUserReviews([]);
-      }
-    };
-    loadReviews();
-  }, [userIdParam, user?.id]);
-
-  // Search within modal for picking favorites
-  useEffect(() => {
-    let active = true;
-    const run = async () => {
-  if (!pickerOpen || !searchQuery || !accessToken) {
-        setSearchResults([]);
-        return;
-      }
-      try {
-        setSearchLoading(true);
-        const type = pickerOpen === 'album' ? 'album' : 'track';
-  const data = await searchMusic(accessToken, searchQuery, type);
-        const items = pickerOpen === 'album' ? (data.albums?.items || []) : (data.tracks?.items || []);
-        if (active) setSearchResults(items);
-      } catch {
-        if (active) setSearchResults([]);
-      } finally {
-        if (active) setSearchLoading(false);
-      }
-    };
-    const t = setTimeout(run, 350);
-    return () => { active = false; clearTimeout(t); };
-  }, [pickerOpen, searchQuery, accessToken]);
-
-  const handleFollowToggle = async () => {
-    if (!user?.id || isSelf) return;
-    try {
-      setUpdating(true);
-      const targetId = resolvedUserId as string;
-      if (profile?.isFollowing) {
-        const res = await unfollowUser(targetId, user.id);
-        setProfile({ ...profile, isFollowing: false, followersCount: res.followersCount });
-      } else {
-        const res = await followUser(targetId, user.id);
-        setProfile({ ...profile, isFollowing: true, followersCount: res.followersCount });
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Action failed');
-    } finally {
-      setUpdating(false);
-    }
+  const toggleAlbumSelection = (album: { id: string; name: string; artist: string; image?: string }) => {
+    setFavAlbumsSelection((prev) => {
+      const exists = prev.find((a) => a.id === album.id);
+      if (exists) return prev.filter((a) => a.id !== album.id);
+      // Enforce max 4 favorite albums
+      if (prev.length >= 4) return prev;
+      return [...prev, album];
+    });
   };
 
-  const handleUsernameSave = async () => {
-    if (!isSelf || !resolvedUserId) return;
-    const val = pendingUsername.trim().toLowerCase();
-    if (!/^[a-z0-9_]{3,20}$/.test(val)) {
-      Alert.alert('Invalid username', 'Use 3-20 chars: a-z, 0-9, _');
-      return;
-    }
-    try {
-      setUpdating(true);
-      const res = await updateUsername(resolvedUserId, val);
-      setProfile({ ...profile, username: res.username });
-      // propagate to global auth state so it reflects across the app
-      if (user) {
-        await setAuth({ accessToken: accessToken || null, refreshToken: refreshToken || null, user: { ...user, username: res.username } });
-      }
-      setEditingUsername(false);
-    } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.error || 'Failed to update username');
-    } finally {
-      setUpdating(false);
-    }
+  const toggleTrackSelection = (track: { id: string; name: string; artist: string; image?: string }) => {
+    setFavTracksSelection((prev) => {
+      const exists = prev.find((t) => t.id === track.id);
+      if (exists) return prev.filter((t) => t.id !== track.id);
+      // Enforce max 4 favorite tracks
+      if (prev.length >= 4) return prev;
+      return [...prev, track];
+    });
   };
 
-  const applyFavorite = async (item: any) => {
-    if (!isSelf || !resolvedUserId || !pickerOpen) return;
-    const favAlbums = profile?.favAlbums || [];
-    const favTracks = profile?.favTracks || [];
-    const shaped = pickerOpen === 'album'
-      ? { id: item.id, name: item.name, artist: (item.artists||[])[0]?.name || '', image: item.images?.[0]?.url }
-      : { id: item.id, name: item.name, artist: (item.artists||[]).map((a:any)=>a.name).join(', '), image: item.album?.images?.[0]?.url };
-    const nextAlbums = pickerOpen === 'album' ? [...favAlbums.filter((x:any)=>x.id!==shaped.id), shaped].slice(0,4) : favAlbums;
-    const nextTracks = pickerOpen === 'track' ? [...favTracks.filter((x:any)=>x.id!==shaped.id), shaped].slice(0,4) : favTracks;
+  const startFavoritesEdit = () => {
+    if (!profile) return;
+    setFavAlbumsSelection(profile.favAlbums || []);
+    setFavTracksSelection(profile.favTracks || []);
+    setFavoritesEditMode(true);
+  };
+
+  const cancelFavoritesEdit = () => {
+    setFavoritesEditMode(false);
+    setFavAlbumsSelection([]);
+    setFavTracksSelection([]);
+  };
+
+  const saveFavorites = async () => {
+    if (!user?.id || !profile) return;
     try {
-      setUpdating(true);
-      const res = await updateFavorites(resolvedUserId, nextAlbums, nextTracks);
+      setSavingFavorites(true);
+      const res = await updateFavorites(user.id, favAlbumsSelection, favTracksSelection);
       setProfile({ ...profile, favAlbums: res.favAlbums, favTracks: res.favTracks });
-      setPickerOpen(null);
-      setSearchQuery('');
-      setSearchResults([]);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to update favorites');
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const removeFavorite = async (kind: 'album'|'track', id: string) => {
-    if (!isSelf || !resolvedUserId) return;
-    const favAlbums = profile?.favAlbums || [];
-    const favTracks = profile?.favTracks || [];
-    const nextAlbums = kind==='album'? favAlbums.filter((x:any)=>x.id!==id) : favAlbums;
-    const nextTracks = kind==='track'? favTracks.filter((x:any)=>x.id!==id) : favTracks;
-    try {
-      setUpdating(true);
-      const res = await updateFavorites(resolvedUserId, nextAlbums, nextTracks);
-      setProfile({ ...profile, favAlbums: res.favAlbums, favTracks: res.favTracks });
+      cancelFavoritesEdit();
     } catch {
-      Alert.alert('Error', 'Failed to update favorites');
+      // Silently ignore save error; user can retry
     } finally {
-      setUpdating(false);
+      setSavingFavorites(false);
     }
   };
 
-  if (!resolvedUserId) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.emptyText}>Sign in to view your profile</Text>
-      </View>
-    );
-  }
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadProfile();
+  };
+
+  const openFollowersModal = async () => {
+    if (!resolvedUserId) return;
+    try {
+      const res = await getFollowers(resolvedUserId, 100);
+      setFollowersList(res.followers);
+      setShowFollowersModal(true);
+    } catch {
+      // fallback to empty list
+      setFollowersList([]);
+      setShowFollowersModal(true);
+    }
+  };
+
+  const openFollowingModal = async () => {
+    if (!resolvedUserId) return;
+    try {
+      const res = await getFollowing(resolvedUserId, 100);
+      setFollowingList(res.following);
+      setShowFollowingModal(true);
+    } catch {
+      // fallback to empty list
+      setFollowingList([]);
+      setShowFollowingModal(true);
+    }
+  };
+
+  const handleFollow = async () => {
+    if (!user?.id || !profile) return;
+    try {
+      if (profile.isFollowing) {
+        await unfollowUser(profile._id, user.id);
+        setProfile({ ...profile, isFollowing: false, followersCount: profile.followersCount - 1 });
+      } else {
+        await followUser(profile._id, user.id);
+        setProfile({ ...profile, isFollowing: true, followersCount: profile.followersCount + 1 });
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+    }
+  };
+
+  const stripEmojis = (input: string) => {
+    return input.replace(/[\p{Extended_Pictographic}\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/gu, '').trim();
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user?.id) return;
+    try {
+      setSaving(true);
+      await updateUserProfile(user.id, {
+        bio: stripEmojis(editBio.trim()),
+        instagramUsername: editInstagram.trim(),
+        twitterHandle: editTwitter.trim(),
+        location: editLocation.trim(),
+      });
+      setProfile({
+        ...profile!,
+        bio: stripEmojis(editBio.trim()),
+        instagramUsername: editInstagram.trim(),
+        twitterHandle: editTwitter.trim(),
+        location: editLocation.trim(),
+      });
+      setIsEditMode(false);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const now = Date.now();
+    const then = new Date(dateString).getTime();
+    const diff = Math.floor((now - then) / 1000);
+
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator color={Colors.primary} size="large" />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
 
-  // ROOT FIX: Show different message if not logged in vs profile not found
   if (!profile) {
-    const isNotLoggedIn = !resolvedUserId && !route.params.userId;
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.emptyText}>
-          {isNotLoggedIn ? 'Please log in to view your profile' : 'Profile not found'}
-        </Text>
-        {isNotLoggedIn && (
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={() => navigation.navigate('Login' as never)}
-          >
-            <Text style={styles.loginButtonText}>Go to Login</Text>
-          </TouchableOpacity>
-        )}
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Profile not found</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />}
+    >
+      {/* Header Section */}
       <View style={styles.header}>
-        {profile.profileImage ? (
-          <Image source={{ uri: profile.profileImage }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Text style={styles.avatarInitial}>{profile.displayName?.charAt(0)?.toUpperCase() || 'U'}</Text>
-          </View>
-        )}
-        <Text style={styles.name}>{profile.displayName}</Text>
-        <View style={styles.usernameRow}>
-          <Text style={styles.username}>@{profile.username || 'user'}</Text>
-          {isSelf && !editingUsername && (
-            <TouchableOpacity onPress={() => { setEditingUsername(true); setPendingUsername(profile.username || ''); }}>
-              <Text style={styles.editLink}>Edit</Text>
+        <Image
+          source={{ uri: profile.profileImage || 'https://via.placeholder.com/100' }}
+          style={styles.profileImage}
+        />
+        <View style={styles.headerInfo}>
+          <Text style={styles.displayName}>{profile.displayName}</Text>
+          {profile.username && <Text style={styles.username}>@{profile.username}</Text>}
+          <View style={styles.statsRow}>
+            <TouchableOpacity style={styles.statItem} onPress={openFollowersModal}>
+              <Text style={styles.statNumber}>{profile.followersCount}</Text>
+              <Text style={styles.statLabel}>Followers</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.statItem} onPress={openFollowingModal}>
+              <Text style={styles.statNumber}>{profile.followingCount}</Text>
+              <Text style={styles.statLabel}>Following</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Bio Section */}
+      <View style={styles.bioSection}>
+        {isEditMode ? (
+          <TextInput
+            style={styles.bioInput}
+            value={editBio}
+            onChangeText={setEditBio}
+            placeholder="Tell us about yourself (200 chars max)"
+            placeholderTextColor={Colors.textSecondary}
+            multiline
+            maxLength={200}
+          />
+        ) : (
+          profile.bio && <Text style={styles.bioText}>{stripEmojis(profile.bio)}</Text>
+        )}
+      </View>
+
+      {/* Social Links & Location */}
+      {(isEditMode || profile.instagramUsername || profile.twitterHandle || profile.location) && (
+        <View style={styles.socialSection}>
+          {isEditMode ? (
+            <>
+              <TextInput
+                style={styles.socialInput}
+                value={editInstagram}
+                onChangeText={setEditInstagram}
+                placeholder="Instagram username"
+                placeholderTextColor={Colors.textSecondary}
+              />
+              <TextInput
+                style={styles.socialInput}
+                value={editTwitter}
+                onChangeText={setEditTwitter}
+                placeholder="Twitter handle"
+                placeholderTextColor={Colors.textSecondary}
+              />
+              <TextInput
+                style={styles.socialInput}
+                value={editLocation}
+                onChangeText={setEditLocation}
+                placeholder="Location"
+                placeholderTextColor={Colors.textSecondary}
+                maxLength={50}
+              />
+            </>
+          ) : (
+            <>
+              {profile.instagramUsername && (
+                <TouchableOpacity onPress={() => Linking.openURL(`https://instagram.com/${profile.instagramUsername}`)}>
+                  <Text style={styles.socialLink}>📷 @{profile.instagramUsername}</Text>
+                </TouchableOpacity>
+              )}
+              {profile.twitterHandle && (
+                <TouchableOpacity onPress={() => Linking.openURL(`https://x.com/${profile.twitterHandle}`)}>
+                  <Text style={styles.socialLink}>🐦 @{profile.twitterHandle}</Text>
+                </TouchableOpacity>
+              )}
+              {profile.location && <Text style={styles.locationText}>📍 {profile.location}</Text>}
+            </>
           )}
         </View>
-        {isSelf && editingUsername && (
-          <View style={styles.usernameEditRow}>
-            <TextInput
-              value={pendingUsername}
-              onChangeText={setPendingUsername}
-              placeholder="new_username"
-              placeholderTextColor="#666"
-              style={styles.usernameInput}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleUsernameSave} disabled={updating}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingUsername(false)}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        {!!profile.email && <Text style={styles.email}>{profile.email}</Text>}
-        <View style={styles.countsRow}>
-          <Text style={styles.count}>{profile.followersCount} Followers</Text>
-          <Text style={styles.dot}>•</Text>
-          <Text style={styles.count}>{profile.followingCount} Following</Text>
-        </View>
-        {!isSelf && (
-          <TouchableOpacity style={[styles.followBtn, profile.isFollowing && styles.followingBtn]} onPress={handleFollowToggle} disabled={updating}>
-            <Text style={styles.followBtnText}>{profile.isFollowing ? 'Following' : 'Follow'}</Text>
+      )}
+
+      {/* Action Buttons */}
+      <View style={styles.actionButtons}>
+        {isOwnProfile ? (
+          <>
+            {isEditMode ? (
+              <>
+                <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSaveProfile} disabled={saving}>
+                  <Text style={styles.buttonText}>{saving ? 'Saving...' : '💾 Save'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={() => {
+                    setIsEditMode(false);
+                    setEditBio(profile.bio || '');
+                    setEditInstagram(profile.instagramUsername || '');
+                    setEditTwitter(profile.twitterHandle || '');
+                    setEditLocation(profile.location || '');
+                  }}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={[styles.button, styles.editButton]} onPress={() => setIsEditMode(true)}>
+                <Text style={styles.buttonText}>✎ Edit Profile</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <TouchableOpacity style={[styles.button, profile.isFollowing ? styles.unfollowButton : styles.followButton]} onPress={handleFollow}>
+            <Text style={styles.buttonText}>{profile.isFollowing ? 'Unfollow' : 'Follow'}</Text>
           </TouchableOpacity>
         )}
       </View>
-      {/* Scrollable content */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-      {/* Favorites */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Favorite Albums</Text>
-          {isSelf && (profile.favAlbums?.length || 0) < 4 && (
-            <TouchableOpacity onPress={() => setPickerOpen('album')}>
-              <Text style={styles.addLink}>+ Add</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {(profile.favAlbums || []).length === 0 && !isSelf ? (
-          <Text style={styles.emptyText}>No favorites yet</Text>
-        ) : (
-          <View style={styles.grid}>
-            {(profile.favAlbums || []).map((a: any) => (
-              <View key={a.id} style={styles.gridItem}>
-                {a.image ? (
-                  <Image source={{ uri: a.image }} style={styles.gridArt} />
-                ) : (
-                  <View style={[styles.gridArt, styles.gridPlaceholder]} />
-                )}
-                <Text style={styles.gridName} numberOfLines={1}>{a.name}</Text>
-                <Text style={styles.gridSub} numberOfLines={1}>{a.artist}</Text>
-                {isSelf && (
-                  <TouchableOpacity style={styles.removeBadge} onPress={() => removeFavorite('album', a.id)}>
-                    <Text style={styles.removeBadgeText}>×</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-            {isSelf && (profile.favAlbums?.length || 0) < 4 && (
-              <TouchableOpacity style={[styles.gridItem, styles.addTile]} onPress={() => setPickerOpen('album')}>
-                <Text style={styles.addTileText}>+ Add Album</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Favorite Tracks</Text>
-          {isSelf && (profile.favTracks?.length || 0) < 4 && (
-            <TouchableOpacity onPress={() => setPickerOpen('track')}>
-              <Text style={styles.addLink}>+ Add</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {(profile.favTracks || []).length === 0 && !isSelf ? (
-          <Text style={styles.emptyText}>No favorites yet</Text>
-        ) : (
-          <View style={styles.grid}>
-            {(profile.favTracks || []).map((t: any) => (
-              <View key={t.id} style={styles.gridItem}>
-                {t.image ? (
-                  <Image source={{ uri: t.image }} style={styles.gridArt} />
-                ) : (
-                  <View style={[styles.gridArt, styles.gridPlaceholder]} />
-                )}
-                <Text style={styles.gridName} numberOfLines={1}>{t.name}</Text>
-                <Text style={styles.gridSub} numberOfLines={1}>{t.artist}</Text>
-                {isSelf && (
-                  <TouchableOpacity style={styles.removeBadge} onPress={() => removeFavorite('track', t.id)}>
-                    <Text style={styles.removeBadgeText}>×</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-            {isSelf && (profile.favTracks?.length || 0) < 4 && (
-              <TouchableOpacity style={[styles.gridItem, styles.addTile]} onPress={() => setPickerOpen('track')}>
-                <Text style={styles.addTileText}>+ Add Track</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
-
-      {/* Recent Reviews */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Recent Reviews</Text>
-        </View>
-        {userReviews.length === 0 ? (
-          <Text style={styles.emptyText}>No reviews yet</Text>
-        ) : (
-          userReviews.slice(0, 5).map((item) => (
-            <View key={item._id} style={styles.reviewCard}>
-              {item.albumArt ? (
-                <Image source={{ uri: item.albumArt }} style={styles.reviewArt} />
-              ) : (
-                <View style={[styles.reviewArt, styles.reviewArtPlaceholder]} />
-              )}
-              <View style={styles.reviewDetails}>
-                <Text style={styles.reviewTitle} numberOfLines={1}>{item.itemName}</Text>
-                <Text style={styles.reviewSub} numberOfLines={1}>{item.artistName}</Text>
-                <Text style={styles.reviewMeta}>⭐ {item.rating}/5 · {item.listeningDate ? new Date(item.listeningDate).toLocaleDateString() : ''}</Text>
-              </View>
-            </View>
-          ))
-        )}
-      </View>
-      </ScrollView>
-
-      {/* Picker Modal */}
-      <Modal visible={!!pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add Favorite {pickerOpen === 'album' ? 'Album' : 'Track'}</Text>
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder={`Search ${pickerOpen === 'album' ? 'albums' : 'tracks'}...`}
-              placeholderTextColor={Colors.textTertiary}
-              style={styles.searchInput}
-            />
-            {searchLoading ? (
-              <ActivityIndicator color={Colors.primary} />
-            ) : (
-              <FlatList
-                data={searchResults}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.resultRow} onPress={() => applyFavorite(item)}>
-                    <Image 
-                      source={{ uri: (item.images?.[0]?.url) || (item.album?.images?.[0]?.url) || '' }} 
-                      style={styles.resultArt} 
-                    />
-                    <View style={styles.resultInfo}>
-                      <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.resultSub} numberOfLines={1}>
-                        {(item.artists||[]).map((a:any)=>a.name).join(', ')}
-                      </Text>
-                    </View>
-                    <Text style={styles.pickText}>Add</Text>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={<Text style={styles.emptyHint}>No results</Text>}
-                style={styles.resultsList}
+      {/* Mutual Followers */}
+      {!isOwnProfile && mutualCount > 0 && (
+        <TouchableOpacity style={styles.mutualSection} onPress={() => setShowMutualModal(true)}>
+          <View style={styles.mutualAvatars}>
+            {mutualFollowers.slice(0, 3).map((follower, index) => (
+              <Image
+                key={follower._id}
+                source={{ uri: follower.profileImage || 'https://via.placeholder.com/30' }}
+                style={[styles.mutualAvatar, { marginLeft: index > 0 ? -10 : 0 }]}
               />
+            ))}
+          </View>
+          <Text style={styles.mutualText}>
+            Followed by {mutualFollowers.slice(0, 2).map(f => f.displayName).join(', ')}
+            {mutualCount > 2 ? ` + ${mutualCount - 2} more` : ''}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Favorites Section */}
+      {profile.favAlbums && profile.favAlbums.length > 0 && (
+        <View style={styles.favoritesSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Favorite Albums</Text>
+            {isOwnProfile && !favoritesEditMode && (
+              <TouchableOpacity onPress={startFavoritesEdit} style={styles.smallEditButton}>
+                <Text style={styles.smallEditButtonText}>Edit Favorites</Text>
+              </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setPickerOpen(null)}>
-              <Text style={styles.closeBtnText}>Close</Text>
-            </TouchableOpacity>
+            {isOwnProfile && favoritesEditMode && (
+              <TouchableOpacity onPress={cancelFavoritesEdit} style={styles.smallCancelButton}>
+                <Text style={styles.smallEditButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.favoritesGrid}>
+            {(favoritesEditMode ? favAlbumsSelection : profile.favAlbums).map((album) => {
+              const selected = !!favAlbumsSelection.find(a => a.id === album.id);
+              return (
+                <TouchableOpacity
+                  key={album.id}
+                  style={[styles.favoriteItem, favoritesEditMode && !selected && styles.unselectedFavorite]}
+                  onPress={() => favoritesEditMode ? toggleAlbumSelection(album) : navigation.navigate('AlbumDetail' as any, { albumId: album.id } as any)}
+                >
+                  <Image source={{ uri: album.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
+                  <Text style={styles.favoriteTitle} numberOfLines={1}>{album.name}</Text>
+                  <Text style={styles.favoriteArtist} numberOfLines={1}>{album.artist}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {profile.favTracks && profile.favTracks.length > 0 && (
+        <View style={styles.favoritesSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Favorite Tracks</Text>
+            {isOwnProfile && !favoritesEditMode && (
+              <TouchableOpacity onPress={startFavoritesEdit} style={styles.smallEditButton}>
+                <Text style={styles.smallEditButtonText}>Edit Favorites</Text>
+              </TouchableOpacity>
+            )}
+            {isOwnProfile && favoritesEditMode && (
+              <TouchableOpacity onPress={cancelFavoritesEdit} style={styles.smallCancelButton}>
+                <Text style={styles.smallEditButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.favoritesGrid}>
+            {(favoritesEditMode ? favTracksSelection : profile.favTracks).map((track) => {
+              const selected = !!favTracksSelection.find(t => t.id === track.id);
+              return (
+                <TouchableOpacity
+                  key={track.id}
+                  style={[styles.favoriteItem, favoritesEditMode && !selected && styles.unselectedFavorite]}
+                  onPress={() => {
+                    if (favoritesEditMode) return toggleTrackSelection(track);
+                    // Navigate to rating screen for tracks with a minimal track shape
+                    navigation.navigate('AddReview' as any, {
+                      itemType: 'track',
+                      track: {
+                        id: track.id,
+                        name: track.name,
+                        artists: [{ name: track.artist }],
+                        album: { images: [{ url: track.image || '' }] },
+                      },
+                    } as any);
+                  }}
+                >
+                  <Image source={{ uri: track.image || 'https://via.placeholder.com/150' }} style={styles.favoriteImage} />
+                  <Text style={styles.favoriteTitle} numberOfLines={1}>{track.name}</Text>
+                  <Text style={styles.favoriteArtist} numberOfLines={1}>{track.artist}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {isOwnProfile && favoritesEditMode && (
+            <View style={styles.favoritesActionsRow}>
+              <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={saveFavorites} disabled={savingFavorites}>
+                <Text style={styles.buttonText}>{savingFavorites ? 'Saving...' : 'Save Favorites'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Activity Section */}
+      <View style={styles.activitySection}>
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
+
+        {activity?.lastScrobble && (() => {
+          const sc = activity.lastScrobble;
+          if (!sc) return null;
+          return (
+            <View style={styles.lastScrobble}>
+              <Text style={styles.activityLabel}>Last played</Text>
+              <TouchableOpacity
+                style={styles.scrobbleRow}
+                onPress={() => navigation.navigate('Search' as any, { initialQuery: sc.trackName, initialFilter: 'tracks' } as any)}
+              >
+                <Image source={{ uri: sc.albumArt || 'https://via.placeholder.com/50' }} style={styles.scrobbleImage} />
+                <View style={styles.scrobbleInfo}>
+                  <Text style={styles.scrobbleTrack} numberOfLines={1}>{sc.trackName}</Text>
+                  <Text style={styles.scrobbleArtist} numberOfLines={1}>{sc.artistName}</Text>
+                  <Text style={styles.scrobbleTime}>{formatTimeAgo(sc.playedAt)}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
+
+        {activity?.recentReviews && activity.recentReviews.length > 0 && (
+          <View style={styles.recentReviews}>
+            <Text style={styles.activityLabel}>Recent Reviews</Text>
+            {activity.recentReviews.map((review) => (
+              <TouchableOpacity
+                key={review._id}
+                style={styles.reviewItem}
+                onPress={() => navigation.navigate('ReviewDetail' as any, { reviewId: review._id } as any)}
+              >
+                <Image source={{ uri: review.albumArt || 'https://via.placeholder.com/60' }} style={styles.reviewImage} />
+                <View style={styles.reviewInfo}>
+                  <Text style={styles.reviewTitle} numberOfLines={1}>
+                    {review.itemName}
+                  </Text>
+                  <Text style={styles.reviewArtist} numberOfLines={1}>
+                    {review.artistName}
+                  </Text>
+                  <View style={styles.reviewMeta}>
+                    <Text style={styles.reviewRating}>⭐ {review.rating}/5</Text>
+                    <Text style={styles.reviewTime}>{formatTimeAgo(review.createdAt)}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* Mutual Followers Modal */}
+      <Modal visible={showMutualModal} transparent animationType="slide" onRequestClose={() => setShowMutualModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Mutual Followers ({mutualCount})</Text>
+              <TouchableOpacity onPress={() => setShowMutualModal(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={mutualFollowers}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.mutualItem}
+                  onPress={() => {
+                    setShowMutualModal(false);
+                    navigation.navigate('Profile' as any, { userId: item._id } as any);
+                  }}
+                >
+                  <Image source={{ uri: item.profileImage || 'https://via.placeholder.com/40' }} style={styles.mutualItemAvatar} />
+                  <View>
+                    <Text style={styles.mutualItemName}>{item.displayName}</Text>
+                    {item.username && <Text style={styles.mutualItemUsername}>@{item.username}</Text>}
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </View>
       </Modal>
-    </View>
+      {/* Followers Modal */}
+      <Modal visible={showFollowersModal} transparent animationType="slide" onRequestClose={() => setShowFollowersModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Followers ({profile.followersCount})</Text>
+              <TouchableOpacity onPress={() => setShowFollowersModal(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={followersList}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.mutualItem}
+                  onPress={() => {
+                    setShowFollowersModal(false);
+                    navigation.navigate('Profile' as any, { userId: item._id } as any);
+                  }}
+                >
+                  <Image source={{ uri: item.profileImage || 'https://via.placeholder.com/40' }} style={styles.mutualItemAvatar} />
+                  <View>
+                    <Text style={styles.mutualItemName}>{item.displayName}</Text>
+                    {item.username && <Text style={styles.mutualItemUsername}>@{item.username}</Text>}
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+      {/* Following Modal */}
+      <Modal visible={showFollowingModal} transparent animationType="slide" onRequestClose={() => setShowFollowingModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Following ({profile.followingCount})</Text>
+              <TouchableOpacity onPress={() => setShowFollowingModal(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={followingList}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.mutualItem}
+                  onPress={() => {
+                    setShowFollowingModal(false);
+                    navigation.navigate('Profile' as any, { userId: item._id } as any);
+                  }}
+                >
+                  <Image source={{ uri: item.profileImage || 'https://via.placeholder.com/40' }} style={styles.mutualItemAvatar} />
+                  <View>
+                    <Text style={styles.mutualItemName}>{item.displayName}</Text>
+                    {item.username && <Text style={styles.mutualItemUsername}>@{item.username}</Text>}
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  centered: { justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { paddingBottom: 32 },
-  header: { alignItems: 'center', padding: 24, paddingTop: 50 },
-  avatar: { width: 96, height: 96, borderRadius: 48, marginBottom: 12 },
-  avatarPlaceholder: { backgroundColor: Colors.placeholder, alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { color: Colors.textPrimary, fontSize: 28, fontWeight: 'bold' },
-  name: { color: Colors.textPrimary, fontSize: 24, fontWeight: '700', marginTop: 4 },
-  usernameRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 10 },
-  username: { color: Colors.textSecondary, fontSize: 15 },
-  editLink: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
-  usernameEditRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8, flexWrap: 'wrap' },
-  usernameInput: { 
-    backgroundColor: Colors.skeleton, 
-    color: Colors.textPrimary, 
-    paddingHorizontal: 12, 
-    paddingVertical: 8, 
-    borderRadius: 8, 
-    minWidth: 160,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
   },
-  saveBtn: { backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  saveBtnText: { color: Colors.black, fontWeight: '700', fontSize: 14 },
-  cancelBtn: { paddingHorizontal: 12, paddingVertical: 8 },
-  cancelBtnText: { color: Colors.textSecondary, fontSize: 14 },
-  email: { color: Colors.textSecondary, fontSize: 14, marginTop: 4 },
-  countsRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  count: { color: Colors.textPrimary, fontSize: 15, fontWeight: '500' },
-  dot: { color: Colors.textTertiary, fontSize: 15 },
-  followBtn: { 
-    marginTop: 16, 
-    backgroundColor: Colors.primary, 
-    paddingHorizontal: 24, 
-    paddingVertical: 10, 
-    borderRadius: 24,
-    minWidth: 120,
+  contentContainer: {
+    padding: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+  },
+  errorText: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginRight: 16,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  displayName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  username: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  statItem: {
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.primary,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  bioSection: {
+    marginBottom: 16,
+  },
+  bioText: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    lineHeight: 20,
+  },
+  bioInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    padding: 12,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  socialSection: {
+    marginBottom: 16,
+  },
+  socialLink: {
+    fontSize: 14,
+    color: Colors.primary,
+    marginBottom: 6,
+  },
+  locationText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+  },
+  socialInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    padding: 12,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  followingBtn: { backgroundColor: Colors.surfaceLight },
-  followBtnText: { color: Colors.textPrimary, fontWeight: '600', fontSize: 15 },
-  section: { paddingHorizontal: 16, marginBottom: 24 },
-  sectionHeaderRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
+  editButton: {
+    backgroundColor: Colors.primary,
+  },
+  saveButton: {
+    backgroundColor: Colors.success || Colors.primary,
+  },
+  cancelButton: {
+    backgroundColor: Colors.surface,
+  },
+  followButton: {
+    backgroundColor: Colors.primary,
+  },
+  unfollowButton: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  buttonText: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mutualSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  mutualAvatars: {
+    flexDirection: 'row',
+    marginRight: 12,
+  },
+  mutualAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: Colors.surface,
+  },
+  mutualText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  favoritesSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
     marginBottom: 12,
   },
-  sectionTitle: { 
-    color: Colors.textPrimary, 
-    fontSize: 18, 
-    fontWeight: '700',
+  favoritesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
   },
-  addLink: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  gridItem: { 
-    width: '47%', 
-    backgroundColor: Colors.surface, 
-    borderRadius: 10, 
-    padding: 12, 
-    position: 'relative',
+  favoriteItem: {
+    width: '47%',
   },
-  gridArt: { width: '100%', aspectRatio: 1, borderRadius: 6, marginBottom: 8, backgroundColor: Colors.placeholder },
-  gridPlaceholder: { backgroundColor: Colors.placeholder },
-  gridName: { color: Colors.textPrimary, fontWeight: '600', fontSize: 14 },
-  gridSub: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
-  removeBadge: { 
-    position: 'absolute', 
-    top: 8, 
-    right: 8, 
-    backgroundColor: 'rgba(0,0,0,0.75)', 
-    borderRadius: 12, 
-    width: 24, 
-    height: 24, 
-    alignItems: 'center', 
+  unselectedFavorite: {
+    opacity: 0.35,
+  },
+  favoriteImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  favoriteTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  favoriteArtist: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  activitySection: {
+    marginBottom: 24,
+  },
+  activityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  lastScrobble: {
+    marginBottom: 20,
+  },
+  scrobbleRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 8,
+  },
+  scrobbleImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  scrobbleInfo: {
+    flex: 1,
     justifyContent: 'center',
   },
-  removeBadgeText: { color: Colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  addTile: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    borderWidth: 1, 
-    borderColor: Colors.border,
-    borderStyle: 'dashed',
-  },
-  addTileText: { color: Colors.textSecondary, fontSize: 14 },
-  modalOverlay: { flex: 1, backgroundColor: Colors.overlayDark, justifyContent: 'flex-end' },
-  modalCard: { 
-    backgroundColor: Colors.surfaceDark, 
-    padding: 20, 
-    borderTopLeftRadius: 16, 
-    borderTopRightRadius: 16,
-    maxHeight: '80%',
-  },
-  modalTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 12 },
-  searchInput: { 
-    backgroundColor: Colors.skeleton, 
-    color: Colors.textPrimary, 
-    paddingHorizontal: 12, 
-    paddingVertical: 10, 
-    borderRadius: 8, 
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  resultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
-  resultArt: { width: 50, height: 50, borderRadius: 6, backgroundColor: Colors.placeholder },
-  resultInfo: { flex: 1 },
-  resultName: { color: Colors.textPrimary, fontWeight: '600', fontSize: 15 },
-  resultSub: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
-  pickText: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
-  resultsList: { maxHeight: 300 },
-  closeBtn: { 
-    marginTop: 16, 
-    alignSelf: 'center', 
-    paddingHorizontal: 20, 
-    paddingVertical: 10, 
-    backgroundColor: Colors.surface, 
-    borderRadius: 8,
-  },
-  closeBtnText: { color: Colors.textPrimary, fontWeight: '600' },
-  emptyHint: { color: Colors.textSecondary, textAlign: 'center', paddingVertical: 20 },
-  emptyText: { color: Colors.textSecondary, fontSize: 14, marginTop: 4 },
-  // Recent reviews styles
-  reviewCard: { 
-    flexDirection: 'row', 
-    backgroundColor: Colors.surface, 
-    borderRadius: 10, 
-    padding: 12, 
-    marginTop: 8,
-  },
-  reviewArt: { width: 60, height: 60, borderRadius: 6, marginRight: 12 },
-  reviewArtPlaceholder: { backgroundColor: Colors.placeholder },
-  reviewDetails: { flex: 1, justifyContent: 'center' },
-  reviewTitle: { color: Colors.textPrimary, fontWeight: '700', fontSize: 15 },
-  reviewSub: { color: Colors.textSecondary, fontSize: 13, marginTop: 2 },
-  reviewMeta: { color: Colors.primary, fontSize: 12, marginTop: 6, fontWeight: '600' },
-  loginButton: {
-    marginTop: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  scrobbleTrack: {
+    fontSize: 14,
     fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  scrobbleArtist: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  scrobbleTime: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  recentReviews: {
+    gap: 12,
+  },
+  reviewItem: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 8,
+  },
+  reviewImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  reviewInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  reviewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  reviewArtist: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+  },
+  reviewMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  reviewRating: {
+    fontSize: 12,
+    color: Colors.primary,
+  },
+  reviewTime: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+  },
+  modalClose: {
+    fontSize: 24,
+    color: Colors.textSecondary,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  smallEditButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 6,
+  },
+  smallCancelButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  smallEditButtonText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  favoritesActionsRow: {
+    marginTop: 12,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  mutualItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.background,
+  },
+  mutualItemAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  mutualItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  mutualItemUsername: {
+    fontSize: 12,
+    color: Colors.textSecondary,
   },
 });
 

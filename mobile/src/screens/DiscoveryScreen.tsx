@@ -404,8 +404,12 @@ const DiscoveryScreen = () => {
     try {
       const comments = await getReviewComments(reviewId);
       setCommentsMap(prev => ({ ...prev, [reviewId]: comments }));
-    } catch (error) {
-      console.error('[DiscoveryScreen] Failed to load comments:', error);
+    } catch (error: any) {
+      // Silent fail for 404 (review might be deleted)
+      if (error?.response?.status === 404) {
+        setCommentsMap(prev => ({ ...prev, [reviewId]: [] }));
+      }
+      // Don't log to prevent console spam
     }
   };
 

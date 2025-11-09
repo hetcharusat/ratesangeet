@@ -8,6 +8,10 @@ export interface IUser extends Document {
   refreshToken: string;
   profileImage?: string;
   username?: string;
+  bio?: string;
+  instagramUsername?: string;
+  twitterHandle?: string;
+  location?: string;
   favAlbums?: Array<{ id: string; name: string; artist: string; image?: string }>;
   favTracks?: Array<{ id: string; name: string; artist: string; image?: string }>;
   createdAt: Date;
@@ -23,11 +27,18 @@ const userSchema = new Schema<IUser>({
   refreshToken: { type: String, required: true },
   profileImage: { type: String },
   username: { type: String, unique: true, sparse: true },
+  bio: { type: String, maxlength: 200 },
+  instagramUsername: { type: String },
+  twitterHandle: { type: String },
+  location: { type: String, maxlength: 50 },
   favAlbums: [{ id: String, name: String, artist: String, image: String }],
   favTracks: [{ id: String, name: String, artist: String, image: String }],
   createdAt: { type: Date, default: Date.now },
   followers: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
   following: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
 });
+
+// Create text index for faster search (run once in production)
+userSchema.index({ username: 'text', displayName: 'text' });
 
 export default mongoose.model<IUser>('User', userSchema);

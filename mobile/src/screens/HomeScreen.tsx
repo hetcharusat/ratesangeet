@@ -153,9 +153,13 @@ const HomeScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#121212" />
-      <ScrollView style={styles.container} refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1DB954" />
-      }>
+      <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1DB954" />
+        }
+      >
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>

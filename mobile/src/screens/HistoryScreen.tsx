@@ -87,8 +87,8 @@ const HistoryScreen = () => {
         const completed: CompletedAlbum[] = [];
         
         // Process albums in batches to avoid overwhelming the API
-  const albumEntries = Array.from(albumMap.entries());
-        const BATCH_SIZE = 5;
+        const albumEntries = Array.from(albumMap.entries());
+        const BATCH_SIZE = 10; // Increased from 5 to 10 for faster processing
         
         for (let i = 0; i < albumEntries.length; i += BATCH_SIZE) {
           const batch = albumEntries.slice(i, i + BATCH_SIZE);
@@ -101,7 +101,12 @@ const HistoryScreen = () => {
             // Without albumId, we can't show accurate progress
             if (data.albumId && accessToken) {
               try {
-                const albumDetails = await getAlbumDetails(accessToken, data.albumId);
+                // Add 2-second timeout for each album fetch to prevent hanging
+                const albumDetailsPromise = getAlbumDetails(accessToken, data.albumId);
+                const timeoutPromise = new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Timeout')), 2000)
+                );
+                const albumDetails = await Promise.race([albumDetailsPromise, timeoutPromise]) as any;
                 totalTracks = albumDetails.total_tracks || albumDetails.tracks?.total || 0;
               } catch (error) {
                 // Without total tracks, we can't show accurate progress - skip this album
@@ -138,10 +143,7 @@ const HistoryScreen = () => {
           const validResults = batchResults.filter(item => item !== null) as CompletedAlbum[];
           completed.push(...validResults);
           
-          // Small delay between batches to avoid rate limiting
-          if (i + BATCH_SIZE < albumEntries.length) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
+          // Removed artificial delay - Promise.all already handles concurrency
         }
 
         // Sort by completion: 100% first, then 50%+, then <50%, each group sorted by last played

@@ -8,6 +8,18 @@ import reactNative from 'eslint-plugin-react-native';
 export default [
   js.configs.recommended,
   {
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/.expo/**',
+      '**/android/**',
+      '**/ios/**',
+      '**/web-build/**',
+      '**/*.js', // Ignore all JS files (bundled code)
+    ],
+  },
+  {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: typescriptParser,

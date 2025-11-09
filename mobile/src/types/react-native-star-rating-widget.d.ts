@@ -3,7 +3,7 @@ declare module 'react-native-star-rating-widget' {
   import { ViewStyle, TextStyle } from 'react-native';
 
   export interface StarRatingProps {
-    rating: number;
+  rating: number;
     onChange?: (rating: number) => void;
     starSize?: number;
     color?: string;

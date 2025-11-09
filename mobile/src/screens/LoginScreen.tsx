@@ -128,8 +128,10 @@ const LoginScreen = () => {
           }
         })();
       }
-    } catch {}
-   
+    } catch {
+      // ignore session storage errors
+    }
+ 
   }, []);
 
   useEffect(() => {

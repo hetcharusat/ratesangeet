@@ -532,7 +532,19 @@ const ProfileScreen = () => {
               <Text style={styles.activityLabel}>Last played</Text>
               <TouchableOpacity
                 style={styles.scrobbleRow}
-                onPress={() => navigation.navigate('Search' as any, { initialQuery: sc.trackName, initialFilter: 'tracks' } as any)}
+                onPress={() => {
+                  if (sc.spotifyId) {
+                    navigation.navigate('AddReview' as any, {
+                      itemType: 'track',
+                      track: {
+                        id: sc.spotifyId,
+                        name: sc.trackName,
+                        artists: [{ name: sc.artistName }],
+                        album: { images: [{ url: sc.albumArt || '' }] },
+                      },
+                    } as any);
+                  }
+                }}
               >
                 <Image source={{ uri: sc.albumArt || 'https://via.placeholder.com/50' }} style={styles.scrobbleImage} />
                 <View style={styles.scrobbleInfo}>

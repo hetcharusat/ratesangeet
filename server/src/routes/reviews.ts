@@ -69,10 +69,12 @@ router.get('/public', async (req: Request, res: Response) => {
 router.get('/user/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
+    console.log(`[REVIEWS] Fetching reviews for userId: ${userId}`);
     const reviews = await Review.find({ userId }).sort({ createdAt: -1 });
+    console.log(`[REVIEWS] Found ${reviews.length} reviews for userId: ${userId}`);
     res.json(reviews);
   } catch (error: any) {
-    console.error('Error fetching reviews:', error);
+    console.error('[REVIEWS] Error fetching reviews:', error);
     res.status(500).json({ error: 'Failed to fetch reviews' });
   }
 });

@@ -425,6 +425,20 @@ export const reactToReview = async (reviewId: string, userId: string, reactionTy
   } as Partial<Review>;
 };
 
+// Get users who reacted to a review (for showing like/dislike lists)
+export const getReviewReactionUsers = async (reviewId: string, reactionType?: string) => {
+  const params = reactionType ? { type: reactionType } : {};
+  const response = await api.get(`/reviews/${reviewId}/reactions/users`, { params });
+  return response.data.users as Array<{
+    _id: string;
+    displayName: string;
+    profileImage?: string;
+    username?: string;
+    spotifyId: string;
+    reactionType: string;
+  }>;
+};
+
 // Profile updates
 export const updateUsername = async (userId: string, username: string) => {
   const response = await api.put(`/users/${userId}/username`, { username });

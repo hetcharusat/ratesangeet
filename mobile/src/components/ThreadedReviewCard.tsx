@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Colors from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -447,6 +448,10 @@ export const ThreadedReviewCard: React.FC<ThreadedReviewCardProps> = ({
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [showReactionUsersModal, setShowReactionUsersModal] = useState(false);
+  const [reactionUsersType, setReactionUsersType] = useState<'like' | 'dislike'>('like');
+  const [reactionUsers, setReactionUsers] = useState<any[]>([]);
+  const [loadingReactionUsers, setLoadingReactionUsers] = useState(false);
   const navigation = useNavigation<NavigationProp<any>>();
 
   const username = getUsername(review.userId);
@@ -462,6 +467,24 @@ export const ThreadedReviewCard: React.FC<ThreadedReviewCardProps> = ({
       } else {
         onReact(review._id, reactionType);
       }
+    }
+  };
+
+  // Handle long press on like/dislike buttons to show users
+  const handleLongPress = async (reactionType: 'like' | 'dislike') => {
+    setReactionUsersType(reactionType);
+    setShowReactionUsersModal(true);
+    setLoadingReactionUsers(true);
+    
+    try {
+      const { getReviewReactionUsers } = await import('../services/api');
+      const users = await getReviewReactionUsers(review._id, reactionType);
+      setReactionUsers(users);
+    } catch (error) {
+      console.error('Error loading reaction users:', error);
+      setReactionUsers([]);
+    } finally {
+      setLoadingReactionUsers(false);
     }
   };
 
@@ -582,6 +605,8 @@ export const ThreadedReviewCard: React.FC<ThreadedReviewCardProps> = ({
         <View style={styles.likeDislikeContainer}>
           <TouchableOpacity
             onPress={() => handleReact('like')}
+            onLongPress={() => handleLongPress('like')}
+            delayLongPress={500}
             style={styles.likeButton}
           >
             <Ionicons 
@@ -598,6 +623,8 @@ export const ThreadedReviewCard: React.FC<ThreadedReviewCardProps> = ({
           
           <TouchableOpacity
             onPress={() => handleReact('dislike')}
+            onLongPress={() => handleLongPress('dislike')}
+            delayLongPress={500}
             style={styles.dislikeButton}
           >
             <Ionicons 
@@ -727,6 +754,69 @@ export const ThreadedReviewCard: React.FC<ThreadedReviewCardProps> = ({
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Reaction Users Modal */}
+      <Modal
+        visible={showReactionUsersModal}
+        animationType="slide"
+        presentationStyle="formSheet"
+        transparent={false}
+        onRequestClose={() => setShowReactionUsersModal(false)}
+      >
+        <View style={styles.reactionUsersModal}>
+          {/* Header */}
+          <View style={styles.reactionUsersHeader}>
+            <TouchableOpacity onPress={() => setShowReactionUsersModal(false)}>
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.reactionUsersTitle}>
+              {reactionUsersType === 'like' ? '👍 Likes' : '👎 Dislikes'}
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {/* Users List */}
+          <ScrollView style={styles.reactionUsersScrollView}>
+            {loadingReactionUsers ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : reactionUsers.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  No {reactionUsersType === 'like' ? 'likes' : 'dislikes'} yet
+                </Text>
+              </View>
+            ) : (
+              reactionUsers.map((user) => (
+                <TouchableOpacity
+                  key={user._id}
+                  style={styles.userItem}
+                  onPress={() => {
+                    setShowReactionUsersModal(false);
+                    navigation.navigate('Profile', { userId: user._id });
+                  }}
+                >
+                  {user.profileImage ? (
+                    <Image source={{ uri: user.profileImage }} style={styles.userAvatar} />
+                  ) : (
+                    <View style={[styles.userAvatar, styles.userAvatarPlaceholder]}>
+                      <Ionicons name="person" size={20} color={Colors.textSecondary} />
+                    </View>
+                  )}
+                  <View style={styles.reactionUserInfo}>
+                    <Text style={styles.userName}>{user.displayName}</Text>
+                    {user.username && (
+                      <Text style={styles.userUsername}>@{user.username}</Text>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
       </Modal>
     </View>
   );
@@ -1352,6 +1442,74 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     letterSpacing: 0.5,
   },
+
+  // Reaction Users Modal Styles
+  reactionUsersModal: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  reactionUsersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface,
+  },
+  reactionUsersTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  reactionUsersScrollView: {
+    flex: 1,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surface,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+  },
+  userAvatarPlaceholder: {
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionUserInfo: {
+    flex: 1,
+  },
+  userName: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  userUsername: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
 });
 
 export default ThreadedReviewCard;
+

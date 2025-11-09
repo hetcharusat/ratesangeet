@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Review from '../models/Review.js';
 import ReviewComment from '../models/ReviewComment.js';
+import User from '../models/User.js';
 
 const router = Router();
 
@@ -242,6 +243,49 @@ router.post('/:id/react', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error reacting to review:', error);
     res.status(500).json({ error: 'Failed to update reaction' });
+  }
+});
+
+// Get users who reacted to a review (for showing like/dislike lists)
+router.get('/:id/reactions/users', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.query as { type?: string };
+
+    const review = await Review.findById(id);
+    if (!review) return res.status(404).json({ error: 'Review not found' });
+
+    if (!review.reactionsByUser) {
+      return res.json({ users: [] });
+    }
+
+    // Get all userIds who reacted with the specified type (or all if no type specified)
+    const userIds: string[] = [];
+    for (const [userId, reactionType] of (review.reactionsByUser as any).entries?.() || []) {
+      if (!type || reactionType === type) {
+        userIds.push(userId);
+      }
+    }
+
+    // Fetch user details
+    const users = await User.find({ _id: { $in: userIds } })
+      .select('displayName profileImage username spotifyId')
+      .lean();
+
+    // Map users with their reaction types
+    const usersWithReactions = users.map((u: any) => ({
+      _id: u._id,
+      displayName: u.displayName,
+      profileImage: u.profileImage,
+      username: u.username,
+      spotifyId: u.spotifyId,
+      reactionType: (review.reactionsByUser as any).get(String(u._id)),
+    }));
+
+    res.json({ users: usersWithReactions });
+  } catch (error: any) {
+    console.error('Error fetching reaction users:', error);
+    res.status(500).json({ error: 'Failed to fetch reaction users' });
   }
 });
 

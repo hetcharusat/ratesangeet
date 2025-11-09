@@ -255,16 +255,25 @@ router.get('/:id/reactions/users', async (req: Request, res: Response) => {
     const review = await Review.findById(id);
     if (!review) return res.status(404).json({ error: 'Review not found' });
 
-    if (!review.reactionsByUser) {
+    if (!review.reactionsByUser || !(review.reactionsByUser instanceof Map)) {
       return res.json({ users: [] });
     }
 
     // Get all userIds who reacted with the specified type (or all if no type specified)
     const userIds: string[] = [];
-    for (const [userId, reactionType] of (review.reactionsByUser as any).entries?.() || []) {
-      if (!type || reactionType === type) {
-        userIds.push(userId);
+    try {
+      for (const [userId, reactionType] of review.reactionsByUser.entries()) {
+        if (!type || reactionType === type) {
+          userIds.push(String(userId));
+        }
       }
+    } catch (mapError) {
+      console.error('Error iterating reactionsByUser map:', mapError);
+      return res.json({ users: [] });
+    }
+
+    if (userIds.length === 0) {
+      return res.json({ users: [] });
     }
 
     // Fetch user details
@@ -279,7 +288,7 @@ router.get('/:id/reactions/users', async (req: Request, res: Response) => {
       profileImage: u.profileImage,
       username: u.username,
       spotifyId: u.spotifyId,
-      reactionType: (review.reactionsByUser as any).get(String(u._id)),
+      reactionType: review.reactionsByUser.get(String(u._id)) || null,
     }));
 
     res.json({ users: usersWithReactions });

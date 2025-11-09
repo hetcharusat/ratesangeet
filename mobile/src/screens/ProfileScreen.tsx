@@ -26,6 +26,19 @@ const ProfileScreen = ({ route, navigation }: ProfileScreenProps) => {
 
   const isSelf = !!user?.id && user?.id === resolvedUserId;
 
+  // ROOT FIX: Reset to own profile when tab is pressed from another user's profile
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('tabPress', (e: any) => {
+      // If currently viewing another user's profile, reset to own profile
+      if (userIdParam && userIdParam !== user?.id) {
+        console.log('[ProfileScreen] Tab pressed while viewing other user, resetting to own profile');
+        navigation.setParams({ userId: undefined });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, userIdParam, user?.id]);
+
   const loadProfile = async () => {
     // ROOT FIX: Don't attempt to load profile if no user ID is available
     if (!resolvedUserId) {

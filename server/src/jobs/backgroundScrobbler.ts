@@ -98,8 +98,19 @@ async function refreshUserToken(user: any): Promise<{ accessToken: string; refre
 
     return result;
   } catch (error: any) {
-    console.error(`❌ Failed to refresh token for user ${user.spotifyId}:`, error.response?.data || error.message);
-    throw new Error('Token refresh failed');
+    const errorData = error.response?.data || {};
+    const errorType = errorData.error || 'unknown';
+    
+    console.error(`❌ Failed to refresh token for user ${user.spotifyId}:`, errorData);
+    
+    // Differentiate between revoked tokens and other errors
+    if (errorType === 'invalid_grant') {
+      // Token revoked - user needs to re-authenticate
+      throw new Error('TOKEN_REVOKED');
+    } else {
+      // Other error (network, server, etc.)
+      throw new Error('Token refresh failed');
+    }
   }
 }
 
@@ -405,19 +416,30 @@ async function processUser(user: any): Promise<{ success: boolean; newScrobbles:
       // If unauthorized, refresh token and retry
       if (error.message === 'UNAUTHORIZED') {
         console.log(`🔄 Token expired for user ${spotifyId}, refreshing...`);
-        const refreshed = await refreshUserToken(user);
-        accessToken = refreshed.accessToken;
-        tokenRefreshed = true;
+        
+        try {
+          const refreshed = await refreshUserToken(user);
+          accessToken = refreshed.accessToken;
+          tokenRefreshed = true;
 
-        // Update user's tokens in DB
-        const updateData: any = { accessToken };
-        if (refreshed.refreshToken) {
-          updateData.refreshToken = refreshed.refreshToken;
+          // Update user's tokens in DB
+          const updateData: any = { accessToken };
+          if (refreshed.refreshToken) {
+            updateData.refreshToken = refreshed.refreshToken;
+          }
+          await User.findByIdAndUpdate(userId, updateData);
+
+          // Retry fetch with new token
+          tracks = await fetchRecentlyPlayed(accessToken);
+        } catch (refreshError: any) {
+          // Token was revoked - user needs to re-authenticate
+          if (refreshError.message === 'TOKEN_REVOKED') {
+            console.warn(`⚠️  User ${spotifyId} needs to re-authenticate (token revoked)`);
+            // TODO: Add field to User model to track this state and notify user
+            return { success: false, newScrobbles: 0, error: 'Token revoked - user needs to re-login' };
+          }
+          throw refreshError;
         }
-        await User.findByIdAndUpdate(userId, updateData);
-
-        // Retry fetch with new token
-        tracks = await fetchRecentlyPlayed(accessToken);
       } else {
         throw error;
       }

@@ -18,6 +18,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { startBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
+import { ensureMongoConnected } from './middleware/mongoConnection.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -54,14 +55,14 @@ app.use(session({
   },
 }));
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/music', musicRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/stats', statsRoutes);
-app.use('/api/discover', discoverRoutes);
-app.use('/api/comments', commentsRoutes);
+// Routes (protected by MongoDB connection check)
+app.use('/api/auth', ensureMongoConnected, authRoutes);
+app.use('/api/music', ensureMongoConnected, musicRoutes);
+app.use('/api/reviews', ensureMongoConnected, reviewRoutes);
+app.use('/api/users', ensureMongoConnected, usersRoutes);
+app.use('/api/stats', ensureMongoConnected, statsRoutes);
+app.use('/api/discover', ensureMongoConnected, discoverRoutes);
+app.use('/api/comments', ensureMongoConnected, commentsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
@@ -224,12 +225,38 @@ app.get('/', async (req, res) => {
   }
 });
 
-// MongoDB Connection
+// MongoDB Connection with monitoring and auto-reconnect
 // Connect to MongoDB FIRST, then start server
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/spotify-tracker');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/spotify-tracker', {
+      // Connection pool settings for stability
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 5000,
+      // Disable auto-reconnect (we'll handle it manually)
+      autoIndex: false,
+    });
     console.log('✅ MongoDB connected successfully');
+    
+    // Monitor connection events
+    mongoose.connection.on('disconnected', () => {
+      console.error('⚠️  MongoDB disconnected! Attempting to reconnect...');
+    });
+
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ MongoDB reconnected successfully');
+    });
+
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ MongoDB connection error:', err);
+      // Don't exit - let mongoose handle reconnection
+    });
+
+    mongoose.connection.on('close', () => {
+      console.error('⚠️  MongoDB connection closed');
+    });
     
     // Initialize server stats after DB connection
     await initializeServerStats();

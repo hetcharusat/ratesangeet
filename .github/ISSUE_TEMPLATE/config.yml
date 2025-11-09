@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/hetcharusat/ratesangeet/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📚 Documentation
+    url: https://github.com/hetcharusat/ratesangeet/blob/dev/docs/INDEX.md
+    about: Browse the complete documentation
+  - name: 🚀 Quickstart Guide
+    url: https://github.com/hetcharusat/ratesangeet/blob/dev/docs/01-getting-started/QUICKSTART.md
+    about: Get started with development setup

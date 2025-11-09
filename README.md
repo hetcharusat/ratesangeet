@@ -6,7 +6,13 @@
 [![Frontend Status](https://img.shields.io/uptimerobot/status/m801757971-4ce2c38569b98bd14f832e86?label=Frontend%20(Vercel)&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
 [![Frontend Uptime](https://img.shields.io/uptimerobot/ratio/7/m801757971-4ce2c38569b98bd14f832e86?label=Web%20Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/Code%20of-Conduct-blue.svg?style=for-the-badge)](CODE_OF_CONDUCT.md)
+
 A mobile music tracking application similar to Letterboxd but for Spotify. Track, rate, and review songs, albums, and singles you've listened to. Built with React Native (Expo) and Node.js.
+
+> **🌟 This is an open-source project!** We welcome contributions from the community. Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
 
 > **Live Status**: [View Uptime Dashboard →](https://stats.uptimerobot.com/OyUXm4nc9m) | Backend: Render | Frontend: Vercel
 
@@ -334,12 +340,58 @@ To keep the Render free tier server awake and avoid 15-minute idle timeouts:
 
 ## 📄 License
 
-MIT License - feel free to use this project for personal or commercial purposes.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We love contributions from the community! Whether it's:
+
+- 🐛 **Bug reports** - Help us identify and fix issues
+- ✨ **Feature requests** - Share your ideas for improvements
+- 📝 **Documentation** - Help others understand the project
+- 💻 **Code contributions** - Submit PRs to improve the codebase
+
+**Getting Started:**
+
+1. Read our [Contributing Guide](CONTRIBUTING.md)
+2. Check out [Good First Issues](https://github.com/hetcharusat/ratesangeet/labels/good%20first%20issue)
+3. Join the [Discussions](https://github.com/hetcharusat/ratesangeet/discussions)
+
+**Quick Setup:**
+
+```bash
+# Fork and clone the repository
+git clone https://github.com/YOUR_USERNAME/ratesangeet.git
+cd ratesangeet
+
+# Install dependencies
+cd server && npm install
+cd ../mobile && npm install
+
+# Set up environment variables (see CONTRIBUTING.md)
+# Start development servers
+npm run start:server  # Terminal 1
+npm run start:mobile  # Terminal 2
+```
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+
+## 📞 Support
+
+For issues or questions:
+1. Check the [documentation](docs/INDEX.md)
+2. Search existing [issues](https://github.com/hetcharusat/ratesangeet/issues)
+3. Join [GitHub Discussions](https://github.com/hetcharusat/ratesangeet/discussions)
+4. Create a new issue with details
+
+## 🙏 Acknowledgments
+
+- Spotify Web API for music data
+- The open-source community for amazing tools and libraries
+- All contributors who help improve this project
 
 ---
 
-**Made with ❤️ for music lovers**
+**Built with ❤️ by the community, for music lovers**
+
+**⭐ Star this repo if you find it useful!**

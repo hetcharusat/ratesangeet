@@ -1,10 +1,20 @@
-import React, { useRef } from 'react';
-import { View, StyleSheet, Dimensions, Animated, Pressable } from 'react-native';
-import { Card, Text, IconButton } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Pressable,
+  Dimensions,
+  Animated,
+  Platform,
+} from 'react-native';
+import { Colors } from '../theme/colors';
 
+// Calculate item size: account for ProfileScreen padding (16*2) + gap between items
 const { width } = Dimensions.get('window');
-const CONTAINER_PADDING = 32;
+const CONTAINER_PADDING = 32; // ProfileScreen has 16px padding on each side
 const GRID_GAP = 10;
 const ITEM_SIZE = (width - CONTAINER_PADDING - GRID_GAP) / 2;
 
@@ -27,6 +37,7 @@ interface FavoritesSectionProps {
   maxItems?: number;
 }
 
+// Separate component for animated item to avoid hooks issues
 const FavoriteItemCard: React.FC<{
   item: FavoriteItem;
   isEditMode: boolean;
@@ -52,20 +63,38 @@ const FavoriteItemCard: React.FC<{
 
   return (
     <Animated.View style={[styles.gridItem, { opacity: itemOpacity }]}>
-      <Card>
-        <Pressable onPress={() => !isEditMode && onPress()}>
-          <Card.Cover source={{ uri: item.image || 'https://via.placeholder.com/150' }} style={styles.itemImage} />
-          <Card.Content style={styles.itemTextContainer}>
-            <Text variant="bodyMedium" numberOfLines={1}>{item.name}</Text>
-            {item.artist && <Text variant="bodySmall" numberOfLines={1}>{item.artist}</Text>}
-          </Card.Content>
-        </Pressable>
-        {isEditMode && (
-          <Animated.View style={[styles.deleteButton, { transform: [{ scale: deleteScale }] }]}>
-            <IconButton icon="close" size={14} onPress={onRemove} style={styles.deleteIcon} />
-          </Animated.View>
-        )}
-      </Card>
+      <Pressable
+        onPress={() => !isEditMode && onPress()}
+        style={styles.itemTouchable}
+      >
+        <Image
+          source={{ uri: item.image || 'https://via.placeholder.com/150' }}
+          style={styles.itemImage}
+        />
+        <View style={styles.itemTextContainer}>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          {item.artist && (
+            <Text style={styles.itemArtist} numberOfLines={1}>
+              {item.artist}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+      {isEditMode && (
+        <Animated.View style={[styles.deleteButton, {
+          transform: [{ scale: deleteScale }],
+          opacity: deleteScale
+        }]}>
+          <TouchableOpacity
+            onPress={onRemove}
+            style={styles.deleteTouch}
+          >
+            <Text style={styles.deleteText}>✕</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
     </Animated.View>
   );
 };
@@ -94,20 +123,30 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
     if (!isEditMode || data.length >= maxItems) return null;
 
     return (
-      <Card key="add-tile" style={[styles.gridItem, styles.addTile]} onPress={onAdd}>
-        <Icon name="plus" size={28} />
-        <Text>Add {title}</Text>
-      </Card>
+      <TouchableOpacity
+        key="add-tile"
+        style={[styles.gridItem, styles.addTile]}
+        onPress={onAdd}
+      >
+        <Text style={styles.addIcon}>+</Text>
+        <Text style={styles.addText}>Add {title}</Text>
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.header, { transform: [{ scale: editScale }] }]}>
-        <Text variant="titleMedium">{title}</Text>
+        <Text style={styles.title}>{title}</Text>
         <View style={styles.headerActions}>
-          {isEditMode && <IconButton icon="content-save" size={20} onPress={onSave} />}
-          <IconButton icon={isEditMode ? 'check' : 'pencil'} size={20} onPress={onToggleEdit} />
+          {isEditMode && (
+            <TouchableOpacity onPress={onSave} style={styles.saveButton}>
+              <Text style={styles.saveIcon}>💾</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onToggleEdit} style={styles.editButton}>
+            <Text style={styles.editIcon}>{isEditMode ? '✓' : '✎'}</Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
 
@@ -142,9 +181,41 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 2,
   },
+  title: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+  },
+  editButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  editIcon: {
+    fontSize: 14,
+    color: Colors.primary,
+  },
+  saveButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveIcon: {
+    fontSize: 14,
   },
   grid: {
     flexDirection: 'row',
@@ -153,31 +224,86 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: ITEM_SIZE,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  itemTouchable: {
+    width: '100%',
   },
   itemImage: {
     width: '100%',
     aspectRatio: 1,
+    backgroundColor: Colors.background,
   },
   itemTextContainer: {
     padding: 6,
     minHeight: 44,
   },
+  itemName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  itemArtist: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
   deleteButton: {
     position: 'absolute',
     top: 4,
     right: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.error + 'DD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
   },
-  deleteIcon: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  deleteTouch: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
   },
   addTile: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
+    borderColor: Colors.primary + '50',
     borderStyle: 'dashed',
-    minHeight: ITEM_SIZE,
+    backgroundColor: Colors.surface + '80',
+    minHeight: ITEM_SIZE + 44,
+  },
+  addIcon: {
+    fontSize: 28,
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  addText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   emptyText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
     textAlign: 'center',
     paddingVertical: 16,
     fontStyle: 'italic',

@@ -7,8 +7,6 @@ import { ScrobbleProvider } from './src/context/ScrobbleContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import * as WebBrowser from 'expo-web-browser';
 import * as Updates from 'expo-updates';
-import { Provider as PaperProvider } from 'react-native-paper';
-import { theme } from './src/theme';
 
 export default function App() {
   // Check for OTA updates on app launch
@@ -56,15 +54,13 @@ export default function App() {
   }, []);
 
   return (
-    <PaperProvider theme={theme}>
-      <AuthProvider>
-        <ScrobbleProvider>
-          <SafeAreaProvider>
-            <AppNavigator />
-            <StatusBar style="light" />
-          </SafeAreaProvider>
-        </ScrobbleProvider>
-      </AuthProvider>
-    </PaperProvider>
+    <AuthProvider>
+      <ScrobbleProvider>
+        <SafeAreaProvider>
+          <AppNavigator />
+          <StatusBar style="light" />
+        </SafeAreaProvider>
+      </ScrobbleProvider>
+    </AuthProvider>
   );
 }

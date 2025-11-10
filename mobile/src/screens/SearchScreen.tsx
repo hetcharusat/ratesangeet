@@ -233,69 +233,78 @@ const SearchScreen = () => {
       : []),
   ];
 
+  const allResults = [...albums, ...tracks, ...artists, ...users];
+
+  const renderItem = ({ item }: { item: Album | Track | Artist | AppUser }) => {
+    let imageUri = '';
+    if ('images' in item && item.images && item.images.length > 0) {
+      imageUri = item.images[0].url;
+    } else if ('album' in item && item.album.images && item.album.images.length > 0) {
+      imageUri = item.album.images[0].url;
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.itemContainer}
+        onPress={() => {
+          if ('album_type' in item) {
+            navigation.navigate('AddReview', { itemType: 'album', album: { id: item.id, name: item.name, images: item.images, artists: item.artists } });
+          } else if ('type' in item && item.type === 'track') {
+            navigation.navigate('AddReview', { itemType: 'track', track: item });
+          } else if ('type' in item && item.type === 'artist') {
+            navigation.navigate('Artist', { artistId: item.id, q: item.name });
+          } else if ('_id' in item) {
+            navigation.navigate('Profile', { userId: item._id });
+          }
+        }}
+      >
+        {imageUri ? <Image source={{ uri: imageUri }} style={styles.itemImage} /> : <View style={styles.itemImage} />}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top']}>
       <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search tracks, albums, artists, or users"
-          placeholderTextColor="#B3B3B3"
-          value={query}
-          onChangeText={setQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-        />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtersRow}
-        >
-          {(['all','albums','tracks','artists','users'] as FilterType[]).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
-                {f === 'all' ? 'All' : f === 'albums' ? 'Albums' : f === 'tracks' ? 'Tracks' : f === 'artists' ? 'Artists' : 'Users'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1DB954" />
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Search</Text>
         </View>
-      )}
-
-      {!loading && query.trim().length >= 2 && sections.length === 0 && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No results found</Text>
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search"
+            placeholderTextColor="#999"
+            value={query}
+            onChangeText={setQuery}
+          />
         </View>
-      )}
-      {!loading && query.trim().length < 2 && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Type at least 2 characters to search</Text>
-        </View>
-      )}
 
-      {!loading && (
-        <SectionList
-          sections={sections as any}
-          keyExtractor={(item: any, index) => item.id + index}
-          renderSectionHeader={({ section: { title } }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{title}</Text>
-            </View>
-          )}
-          contentContainerStyle={styles.listContainer}
-          stickySectionHeadersEnabled={false}
-        />
-      )}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#1DB954" />
+          </View>
+        )}
+
+        {!loading && query.trim().length >= 2 && allResults.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No results found</Text>
+          </View>
+        )}
+        {!loading && query.trim().length < 2 && (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Type at least 2 characters to search</Text>
+          </View>
+        )}
+
+        {!loading && (
+          <SectionList
+            sections={[{ data: allResults }]}
+            renderItem={renderItem}
+            keyExtractor={(item: any) => item.id}
+            numColumns={3}
+            contentContainerStyle={styles.listContainer}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -304,100 +313,43 @@ const SearchScreen = () => {
 const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
-    backgroundColor: '#191414',
+    backgroundColor: '#000',
   },
   container: {
     flex: 1,
-    backgroundColor: '#191414',
+    backgroundColor: '#000',
+  },
+  header: {
+    padding: 15,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   searchContainer: {
-    padding: 15,
-    backgroundColor: '#282828',
+    paddingHorizontal: 15,
+    paddingBottom: 15,
   },
   searchInput: {
-    backgroundColor: '#3E3E3E',
-    color: '#FFFFFF',
+    backgroundColor: '#222',
+    color: '#fff',
     padding: 15,
-    borderRadius: 25,
-    fontSize: 16,
-  },
-  filtersRow: {
-    flexDirection: 'row',
-    marginTop: 10,
-    paddingHorizontal: 4,
-  },
-  filterChip: {
-    backgroundColor: '#3E3E3E',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  filterChipActive: {
-    backgroundColor: '#1DB954',
-  },
-  filterChipText: {
-    color: '#B3B3B3',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  sectionHeader: {
-    backgroundColor: '#191414',
-    padding: 15,
-    paddingBottom: 10,
-  },
-  sectionTitle: {
-    color: '#1DB954',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  itemCard: {
-    flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#282828',
-    marginHorizontal: 15,
-    marginBottom: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  albumArt: {
-    width: 60,
-    height: 60,
     borderRadius: 5,
-    marginRight: 15,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  badge: {
-    color: '#1DB954',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginBottom: 3,
-  },
-  itemName: {
-    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 3,
   },
-  artistName: {
-    color: '#B3B3B3',
-    fontSize: 14,
-    marginBottom: 2,
+  listContainer: {
+    paddingHorizontal: 10,
   },
-  albumName: {
-    color: '#666',
-    fontSize: 12,
+  itemContainer: {
+    flex: 1 / 3,
+    aspectRatio: 1,
+    padding: 5,
   },
-  addButton: {
-    color: '#1DB954',
-    fontSize: 30,
-    fontWeight: 'bold',
-    marginLeft: 10,
+  itemImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#333',
   },
   loadingContainer: {
     flex: 1,
@@ -410,11 +362,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#B3B3B3',
+    color: '#999',
     fontSize: 16,
-  },
-  listContainer: {
-    paddingBottom: 20,
   },
 });
 

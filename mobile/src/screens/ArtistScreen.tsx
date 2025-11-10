@@ -107,126 +107,63 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ route, navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <LoadingState loading={loading} error={error} onRetry={load}>
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-          {/* Header */}
+        <ScrollView style={styles.container}>
           <View style={styles.header}>
             {!!artistImage && (
               <Image source={{ uri: artistImage }} style={styles.artistImage} />
             )}
             <Text style={styles.artistName} numberOfLines={2}>{artistName}</Text>
-            {!!profile?.artist?.id && (
-              <TouchableOpacity 
-                style={styles.openSpotifyBtn} 
-                onPress={() => openSpotifyArtist(profile.artist?.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.openSpotifyText}>🎵 Open in Spotify</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
-          {/* Top Tracks */}
-          {profile?.topTracks && profile.topTracks.length > 0 && (
-            <View style={styles.section}>
-              <SectionTitle title="Top Tracks" />
-              {profile.topTracks.map((t, idx) => (
-                <View key={t.id} style={styles.trackRow}>
-                  <Text style={styles.trackNumber}>{idx + 1}</Text>
-                  <Image source={{ uri: pickImageUrl(t.album?.images) }} style={styles.trackArt} />
-                  <View style={styles.trackInfo}>
-                    <Text style={styles.trackName} numberOfLines={1}>{t.name}</Text>
-                    <Text style={styles.trackSub} numberOfLines={1}>
-                      {(t.artists || []).map((a) => a?.name).filter(Boolean).join(', ')}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => openSpotifyTrack(t.id)} style={styles.trackOpenBtn} activeOpacity={0.7}>
-                    <Text style={styles.trackOpenIcon}>Play</Text>
-                  </TouchableOpacity>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Top Tracks</Text>
+            {profile?.topTracks?.map((track) => (
+              <TouchableOpacity key={track.id} style={styles.trackItem} onPress={() => openSpotifyTrack(track.id)}>
+                <Image source={{ uri: pickImageUrl(track.album?.images) }} style={styles.trackArt} />
+                <View style={styles.trackInfo}>
+                  <Text style={styles.trackName}>{track.name}</Text>
+                  <Text style={styles.trackSub}>{(track.artists || []).map((a) => a?.name).filter(Boolean).join(', ')}</Text>
                 </View>
+                <Text style={styles.spotifyIcon}>🎵</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Albums</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {albums.map((album) => (
+                <TouchableOpacity key={album.id} style={styles.albumItem} onPress={() => openAlbumForReview(album)}>
+                  <Image source={{ uri: pickImageUrl(album.images) }} style={styles.albumArt} />
+                  <Text style={styles.albumName}>{album.name}</Text>
+                </TouchableOpacity>
               ))}
-            </View>
-          )}
+            </ScrollView>
+          </View>
 
-          {/* Discography - Albums */}
-          {albums.length > 0 && (
-            <View style={styles.section}>
-              <SectionTitle title="Albums" />
-              <View style={styles.gridContainer}>
-                {albums.map((a) => (
-                  <View key={a.id} style={styles.gridItem}>
-                    <TouchableOpacity onPress={() => openAlbumForReview(a)} activeOpacity={0.8}>
-                      <Image source={{ uri: pickImageUrl(a.images) }} style={styles.gridArt} />
-                      <Text style={styles.gridName} numberOfLines={2}>{a.name}</Text>
-                      {!!a.release_date && (
-                        <Text style={styles.gridYear}>{new Date(a.release_date).getFullYear()}</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.gridOpenBtn} 
-                      onPress={() => openSpotifyAlbum(a.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.gridOpenText}>▶ Play</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Singles & EPs</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {singles.map((single) => (
+                <TouchableOpacity key={single.id} style={styles.albumItem} onPress={() => openAlbumForReview(single)}>
+                  <Image source={{ uri: pickImageUrl(single.images) }} style={styles.albumArt} />
+                  <Text style={styles.albumName}>{single.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
-          {/* Discography - Singles */}
-          {singles.length > 0 && (
-            <View style={styles.section}>
-              <SectionTitle title="Singles & EPs" />
-              <View style={styles.gridContainer}>
-                {singles.map((a) => (
-                  <View key={a.id} style={styles.gridItem}>
-                    <TouchableOpacity onPress={() => openAlbumForReview(a)} activeOpacity={0.8}>
-                      <Image source={{ uri: pickImageUrl(a.images) }} style={styles.gridArt} />
-                      <Text style={styles.gridName} numberOfLines={2}>{a.name}</Text>
-                      {!!a.release_date && (
-                        <Text style={styles.gridYear}>{new Date(a.release_date).getFullYear()}</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.gridOpenBtn} 
-                      onPress={() => openSpotifyAlbum(a.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.gridOpenText}>▶ Play</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Compilations */}
-          {compilations.length > 0 && (
-            <View style={styles.section}>
-              <SectionTitle title="Compilations" />
-              <View style={styles.gridContainer}>
-                {compilations.map((a) => (
-                  <View key={a.id} style={styles.gridItem}>
-                    <TouchableOpacity onPress={() => openAlbumForReview(a)} activeOpacity={0.8}>
-                      <Image source={{ uri: pickImageUrl(a.images) }} style={styles.gridArt} />
-                      <Text style={styles.gridName} numberOfLines={2}>{a.name}</Text>
-                      {!!a.release_date && (
-                        <Text style={styles.gridYear}>{new Date(a.release_date).getFullYear()}</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.gridOpenBtn} 
-                      onPress={() => openSpotifyAlbum(a.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.gridOpenText}>▶ Play</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Compilations</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {compilations.map((compilation) => (
+                <TouchableOpacity key={compilation.id} style={styles.albumItem} onPress={() => openAlbumForReview(compilation)}>
+                  <Image source={{ uri: pickImageUrl(compilation.images) }} style={styles.albumArt} />
+                  <Text style={styles.albumName}>{compilation.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         </ScrollView>
       </LoadingState>
     </SafeAreaView>
@@ -236,114 +173,74 @@ const ArtistScreen: React.FC<ArtistScreenProps> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   safeArea: { 
     flex: 1, 
-    backgroundColor: Colors.background,
-    ...(Platform.OS === 'web' ? { height: '100vh' as any } : {}),
+    backgroundColor: '#000',
   },
   container: { 
     flex: 1,
-    ...(Platform.OS === 'web' ? { height: '100%' as any } : {}),
   },
-  content: { 
-    padding: 16, 
-    paddingBottom: 40,
-    ...(Platform.OS === 'web' ? { minHeight: '100%' as any } : {}),
-  },
-  header: { alignItems: 'center', marginBottom: 24 },
-  artistImage: { width: 160, height: 160, borderRadius: 80, marginBottom: 16, borderWidth: 3, borderColor: Colors.primary },
-  artistName: { color: Colors.textPrimary, fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
-  openSpotifyBtn: { 
-    backgroundColor: Colors.primary, 
-    paddingHorizontal: 24, 
-    paddingVertical: 12, 
-    borderRadius: 24,
-    marginTop: 8,
-    flexDirection: 'row',
+  header: {
     alignItems: 'center',
-    gap: 8,
+    padding: 20,
   },
-  openSpotifyText: { color: Colors.black, fontWeight: '700', fontSize: 15 },
-
-  section: { marginBottom: 28 },
+  artistImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    marginBottom: 20,
+  },
+  artistName: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  section: {
+    padding: 15,
+  },
   sectionTitle: { 
-    color: Colors.textPrimary, 
+    color: '#fff',
     fontSize: 20, 
-    fontWeight: '900', 
-    marginBottom: 16, 
-    letterSpacing: 0.5, 
-    textTransform: 'uppercase',
-    paddingBottom: 8,
-    borderBottomWidth: 3,
-    borderBottomColor: Colors.primary,
-  },
-  emptyText: { color: Colors.textSecondary, fontSize: 13, fontStyle: 'italic' },
-
-  // Top tracks - list style with number
-  trackRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    fontWeight: 'bold',
     marginBottom: 10, 
-    backgroundColor: Colors.surface, 
-    borderRadius: 10, 
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
-  trackNumber: { width: 28, color: Colors.textTertiary, fontSize: 15, fontWeight: '800', marginRight: 10, textAlign: 'center' },
-  trackArt: { width: 52, height: 52, borderRadius: 6, marginRight: 12 },
-  trackInfo: { flex: 1 },
-  trackName: { color: Colors.textPrimary, fontSize: 15, fontWeight: '600', marginBottom: 3 },
-  trackSub: { color: Colors.textSecondary, fontSize: 13 },
-  trackOpenBtn: { 
-    paddingHorizontal: 16,
-    paddingVertical: 8, 
-    borderRadius: 16, 
-    backgroundColor: Colors.primary, 
-    marginLeft: 8,
-  },
-  trackOpenIcon: { color: Colors.black, fontSize: 16, fontWeight: '700' },
-
-  // Albums grid
-  gridContainer: { 
-    flexDirection: 'row', 
-    flexWrap: 'wrap', 
-    marginHorizontal: -6,
-  },
-  gridItem: { 
-    width: '50%',
-    paddingHorizontal: 6,
-    marginBottom: 18,
-  },
-  gridArt: { 
-    width: '100%', 
-    aspectRatio: 1, 
-    borderRadius: 8, 
-    marginBottom: 8,
-    backgroundColor: Colors.surfaceDark,
-  },
-  gridName: { 
-    color: Colors.textPrimary, 
-    fontSize: 13, 
-    fontWeight: '600', 
-    marginBottom: 3,
-    minHeight: 32,
-    lineHeight: 16,
-  },
-  gridYear: { 
-    color: Colors.textSecondary, 
-    fontSize: 11, 
-    marginBottom: 8,
-  },
-  gridOpenBtn: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    alignItems: 'center',
+  trackItem: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  gridOpenText: { color: Colors.black, fontSize: 12, fontWeight: '700' },
+  trackArt: {
+    width: 50,
+    height: 50,
+    marginRight: 10,
+  },
+  trackInfo: {
+    flex: 1,
+  },
+  trackName: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  trackSub: {
+    color: '#999',
+    fontSize: 14,
+  },
+  spotifyIcon: {
+    color: '#1DB954',
+    fontSize: 24,
+  },
+  albumItem: {
+    width: 150,
+    marginRight: 15,
+  },
+  albumArt: {
+    width: '100%',
+    height: 150,
+  },
+  albumName: {
+    color: '#fff',
+    marginTop: 5,
+    textAlign: 'center',
+  },
 });
 
 export default ArtistScreen;

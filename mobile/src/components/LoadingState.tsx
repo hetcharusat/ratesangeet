@@ -1,7 +1,6 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { ActivityIndicator, Button, Text, withTheme } from 'react-native-paper';
-import { Theme } from 'react-native-paper/lib/typescript/types';
+import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { Colors } from '../theme/colors';
 
 interface LoadingStateProps {
   loading?: boolean;
@@ -10,23 +9,21 @@ interface LoadingStateProps {
   empty?: boolean;
   emptyMessage?: string;
   children?: React.ReactNode;
-  theme: Theme;
 }
 
-const LoadingStateWithoutTheme: React.FC<LoadingStateProps> = ({
+export const LoadingState: React.FC<LoadingStateProps> = ({
   loading,
   error,
   onRetry,
   empty,
   emptyMessage = 'No data available',
   children,
-  theme,
 }) => {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator animating={true} color={theme.colors.primary} size="large" />
-        <Text style={{ marginTop: 12, color: theme.colors.backdrop }}>Loading...</Text>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
@@ -34,12 +31,12 @@ const LoadingStateWithoutTheme: React.FC<LoadingStateProps> = ({
   if (error) {
     return (
       <View style={styles.centered}>
-        <Text style={{ fontSize: 48, marginBottom: 12 }}>⚠️</Text>
-        <Text style={{ color: theme.colors.error, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>{error}</Text>
+        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={styles.errorText}>{error}</Text>
         {onRetry && (
-          <Button mode="contained" onPress={onRetry}>
-            Try Again
-          </Button>
+          <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -48,8 +45,8 @@ const LoadingStateWithoutTheme: React.FC<LoadingStateProps> = ({
   if (empty) {
     return (
       <View style={styles.centered}>
-        <Text style={{ fontSize: 48, marginBottom: 12 }}>📭</Text>
-        <Text style={{ color: theme.colors.backdrop, fontSize: 16, textAlign: 'center' }}>{emptyMessage}</Text>
+        <Text style={styles.emptyIcon}>📭</Text>
+        <Text style={styles.emptyText}>{emptyMessage}</Text>
       </View>
     );
   }
@@ -64,6 +61,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
+  loadingText: {
+    marginTop: 12,
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
+  errorIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    textAlign: 'center',
+  },
 });
-
-export const LoadingState = withTheme(LoadingStateWithoutTheme);

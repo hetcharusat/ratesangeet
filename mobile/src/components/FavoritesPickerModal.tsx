@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { FlatList, View } from 'react-native';
 import {
-  View,
-  Text,
-  StyleSheet,
   Modal,
+  Portal,
+  Text,
   TextInput,
-  FlatList,
-  Image,
-  TouchableOpacity,
+  Button,
+  Card,
+  IconButton,
   ActivityIndicator,
-  Pressable,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { Colors } from '../theme/colors';
+  Avatar,
+  List,
+} from 'react-native-paper';
 import { searchMusic } from '../services/api';
 
 interface SearchResult {
@@ -45,7 +43,6 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
 
   useEffect(() => {
     if (!visible) {
-      // Reset state when modal closes
       setQuery('');
       setResults([]);
       setLoading(false);
@@ -66,10 +63,7 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
       setError(null);
       try {
         const data = await searchMusic(accessToken, query, type);
-        // Extract items from the correct property based on type
-        const items = type === 'album' 
-          ? (data.albums?.items || []) 
-          : (data.tracks?.items || []);
+        const items = type === 'album' ? data.albums?.items || [] : data.tracks?.items || [];
         
         const mapped = items.map((item: any) => ({
           id: item.id,
@@ -91,258 +85,57 @@ export const FavoritesPickerModal: React.FC<FavoritesPickerModalProps> = ({
       } finally {
         setLoading(false);
       }
-    }, 600); // Increased debounce to 600ms for better batching
+    }, 600);
 
     return () => clearTimeout(timer);
-  }, [query, type, accessToken]);
+  }, [query, type, accessToken, visible]);
 
   const handleSelect = (item: SearchResult) => {
     onSelect(item);
     onClose();
   };
 
+  const renderItem = ({ item }: { item: SearchResult }) => (
+    <List.Item
+      title={item.name}
+      description={item.artist}
+      left={props => <Avatar.Image {...props} source={{ uri: item.image || 'https://via.placeholder.com/60' }} />}
+      right={props => <IconButton {...props} icon="plus" onPress={() => handleSelect(item)} />}
+      onPress={() => handleSelect(item)}
+    />
+  );
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.modalOverlay}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              Add {type === 'album' ? 'Album' : 'Track'}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TextInput
-            style={styles.searchInput}
-            placeholder={`Search for ${type}s...`}
-            placeholderTextColor={Colors.textSecondary}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
+    <Portal>
+      <Modal visible={visible} onDismiss={onClose} contentContainerStyle={{ backgroundColor: 'white', padding: 20, margin: 20 }}>
+        <Card>
+          <Card.Title
+            title={`Add ${type === 'album' ? 'Album' : 'Track'}`}
+            right={(props) => <IconButton {...props} icon="close" onPress={onClose} />}
           />
-
-          {loading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.loadingText}>Searching...</Text>
-            </View>
-          )}
-
-          {error && !loading && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>⚠️ {error}</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  setError(null);
-                  setQuery(query + ' '); // Trigger re-search
-                  setTimeout(() => setQuery(query.trim()), 0);
-                }}
-                style={styles.retryButton}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {!loading && !error && query.trim() && results.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No results found</Text>
-            </View>
-          )}
-
-          {!loading && !error && !query.trim() && (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                Type to search Spotify {type}s
-              </Text>
-            </View>
-          )}
-
-          {!loading && !error && results.length > 0 && (
+          <Card.Content>
+            <TextInput
+              label={`Search for ${type}s...`}
+              value={query}
+              onChangeText={setQuery}
+              autoFocus
+            />
+            {loading && <ActivityIndicator animating={true} style={{ marginTop: 16 }} />}
+            {error && <Text style={{ color: 'red', marginTop: 16 }}>{error}</Text>}
+            {!loading && !error && query.trim() && results.length === 0 && (
+              <Text style={{ marginTop: 16 }}>No results found</Text>
+            )}
+            {!loading && !error && !query.trim() && (
+              <Text style={{ marginTop: 16 }}>Type to search Spotify {type}s</Text>
+            )}
             <FlatList
               data={results}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.resultRow}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Image
-                    source={{
-                      uri: item.image || 'https://via.placeholder.com/60',
-                    }}
-                    style={styles.resultImage}
-                  />
-                  <View style={styles.resultInfo}>
-                    <Text style={styles.resultName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.resultArtist} numberOfLines={1}>
-                      {item.artist}
-                    </Text>
-                  </View>
-                  <Text style={styles.addIcon}>+</Text>
-                </TouchableOpacity>
-              )}
-              contentContainerStyle={styles.resultsList}
-              showsVerticalScrollIndicator={false}
+              renderItem={renderItem}
+              keyExtractor={item => item.id}
             />
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+          </Card.Content>
+        </Card>
+      </Modal>
+    </Portal>
   );
 };
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    maxHeight: '80%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.textSecondary,
-  },
-  searchInput: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.textPrimary,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  loadingContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 8,
-  },
-  errorContainer: {
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    gap: 12,
-  },
-  errorText: {
-    fontSize: 14,
-    color: Colors.error,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 16,
-  },
-  retryButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  resultsList: {
-    paddingBottom: 20,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  resultImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: Colors.background,
-    marginRight: 12,
-  },
-  resultInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  resultName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  resultArtist: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  addIcon: {
-    fontSize: 28,
-    color: Colors.primary,
-    fontWeight: '300',
-    marginLeft: 8,
-  },
-});

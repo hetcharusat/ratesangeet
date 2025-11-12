@@ -25,21 +25,35 @@ import { compressionMiddleware, conditionalGet } from './middleware/optimization
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env from server root (critical for Spotify credentials)
-dotenv.config({ path: path.join(__dirname, '../.env') });
+// Load .env from server root (only in development; Render uses dashboard env vars)
+if (process.env.NODE_ENV !== 'production') {
+  const envPath = path.join(__dirname, '../.env');
+  try {
+    dotenv.config({ path: envPath });
+  } catch (e) {
+    console.warn('⚠️  Local .env not found (OK in production):', (e as any)?.message);
+  }
+}
 
-// Verify critical env vars are loaded
+// Verify critical env vars are loaded (from .env in dev, or Render dashboard in prod)
 if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
-  console.error('❌ CRITICAL: Spotify credentials not loaded from .env!');
+  console.error('❌ CRITICAL: Spotify credentials not loaded!');
   console.error('   SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? 'SET' : 'MISSING');
   console.error('   SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? 'SET' : 'MISSING');
+  console.error('   NODE_ENV:', process.env.NODE_ENV || 'undefined');
+  console.error('   Ensure environment variables are set in Render dashboard or .env file');
   process.exit(1);
 }
 
 console.log('✅ Spotify credentials loaded successfully');
+console.log('   Environment: NODE_ENV =', process.env.NODE_ENV || 'development');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 5000;
+
+console.log('🚀 Server starting...');
+console.log('   PORT:', DEFAULT_PORT);
+console.log('   NODE_ENV:', process.env.NODE_ENV || 'development');
 
 // Load OpenAPI document (fail-safe: continue if load fails)
 let openapiDoc: any = null;
@@ -64,6 +78,16 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
+
+// Global error handlers (prevent silent crashes)
+process.on('uncaughtException', (err) => {
+  console.error('❌ UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ UNHANDLED REJECTION:', reason);
+});
 
 // V2 Optimization: Compression (gzip) for all responses
 app.use(compressionMiddleware);

@@ -1,0 +1,122 @@
+SUPER MARKET INVENTRY MANAGMENT SYSTEM
+ITUE203 - Web Development Framwork - Practical No. 2
+
+==============================================
+
+SETUP INSTRUCTIONS:
+
+1. Databas Setup:
+   - Open phpMyAdmin
+   - Create new databas: supermarket_inventory
+   - Import sql/schema.sql file
+   - Done!
+
+2. Configration:
+   - Open config/database.php
+   - Change databas credentails if needded:
+     * $host = "localhost";
+     * $db_name = "supermarket_inventory";
+     * $username = "root";
+     * $password = "";
+
+3. Deploy:
+   - Copy supermarket folder to xampp/htdocs
+   - Start Apache and MySQL in XAMPP
+   - Open browser: http://localhost/supermarket
+
+4. Login:
+   - Username: admin
+   - Password: admin123
+
+==============================================
+
+FETURES:
+
+✓ Admin Login System
+✓ Product Managment (CRUD)
+✓ Transaction Managment (Purchas/Sale)
+✓ Stock Updates (Real-time)
+✓ Cookie Alerts (Low Stock & Expiry)
+✓ Reports & Analytics
+✓ Security (Password Hash, PDO, Sessions)
+
+==============================================
+
+DATABASE TABLES:
+
+1. admin_users - Admin login info
+2. products - Product inventry
+3. transactions - Purchas/Sale recods
+4. activity_log - User activity tracking
+
+==============================================
+
+TECHNOLOGIES USED:
+
+- PHP 7.4+
+- MySQL 5.7+
+- OOP (Classes)
+- PDO (Securty)
+- Sessions & Cookies
+- HTML/CSS
+
+==============================================
+
+EXPECTED OUTPUT:
+
+1. Admin can login securly
+2. View inventry with low stock alerts
+3. Add/Edit/Delete products
+4. Record purchas and sales
+5. Stock updates automaticly
+6. See expiry alerts
+7. Generate reports
+
+==============================================
+
+TROUBLESHOOTING:
+
+Problem: Database conection error
+Solution: Check credentails in config/database.php
+
+Problem: Login not working
+Solution: Make sure schema.sql is imported
+
+Problem: Alerts not showing
+Solution: Enable cookies in browser
+
+==============================================
+
+NOTES:
+
+- Default admin user created automaticly
+- Sample data included for testing
+- Low stock threshhold is 10 by default
+- Expiry alert shows 7 days before
+- Cookie alert refreshs every 24 hours
+
+==============================================
+
+PROJECT STRUCTURE:
+
+supermarket/
+├── admin/
+│   ├── dashboard.php
+│   ├── products.php
+│   ├── transactions.php
+│   ├── reports.php
+│   └── logout.php
+├── classes/
+│   ├── Auth.php
+│   ├── Product.php
+│   └── Transaction.php
+├── config/
+│   ├── config.php
+│   └── database.php
+├── sql/
+│   └── schema.sql
+└── index.php
+
+==============================================
+
+Developed for ITUE203 Course Practical Assignment

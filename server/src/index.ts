@@ -7,19 +7,19 @@ import cookieParser from 'cookie-parser';
 import os from 'os';
 import http from 'http';
 // Unified router loader (provides grouped + legacy mounts)
-import apiRouter from './routes/index.js';
+import apiRouter from './routes/index';
 // API docs (Swagger/OpenAPI)
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
 import path from 'path';
-import ServerStats from './models/ServerStats.js';
+import ServerStats from './models/ServerStats';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { startBackgroundScrobbler, runBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
-import { runArchiveJob } from './jobs/archiveScrobbles.js';
-import { ensureMongoConnected } from './middleware/mongoConnection.js';
-import { errorHandler } from './middleware/errorHandler.js';
-import { compressionMiddleware, conditionalGet } from './middleware/optimization.js';
+import { startBackgroundScrobbler, runBackgroundScrobbler } from './jobs/backgroundScrobbler';
+import { runArchiveJob } from './jobs/archiveScrobbles';
+import { ensureMongoConnected } from './middleware/mongoConnection';
+import { errorHandler } from './middleware/errorHandler';
+import { compressionMiddleware, conditionalGet } from './middleware/optimization';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);

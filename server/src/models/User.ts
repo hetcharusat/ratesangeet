@@ -17,6 +17,16 @@ export interface IUser extends Document {
   createdAt: Date;
   followers: mongoose.Types.ObjectId[];
   following: mongoose.Types.ObjectId[];
+  /** Lifecycle status of the user's Spotify tokens */
+  tokenStatus: 'active' | 'revoked' | 'inactive';
+  /** When we last successfully refreshed the access token */
+  lastTokenRefreshAt?: Date;
+  /** When we last detected a refresh failure */
+  lastTokenErrorAt?: Date;
+  /** Last Spotify OAuth error string (e.g. invalid_grant) */
+  lastTokenError?: string;
+  /** Count of consecutive refresh failures */
+  consecutiveRefreshFailures?: number;
 }
 
 const userSchema = new Schema<IUser>({
@@ -36,6 +46,11 @@ const userSchema = new Schema<IUser>({
   createdAt: { type: Date, default: Date.now },
   followers: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
   following: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
+  tokenStatus: { type: String, enum: ['active', 'revoked', 'inactive'], default: 'active', index: true },
+  lastTokenRefreshAt: { type: Date },
+  lastTokenErrorAt: { type: Date },
+  lastTokenError: { type: String },
+  consecutiveRefreshFailures: { type: Number, default: 0 },
 });
 
 // Create text index for faster search (run once in production)

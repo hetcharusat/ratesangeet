@@ -1,18 +1,11 @@
 import { Router, Request, Response } from 'express';
-import Scrobble from '../models/Scrobble.js';
-import Review from '../models/Review.js';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
+import { cachedSuccess, error } from '../utils/response';
+import Scrobble from '../models/Scrobble';
+import Review from '../models/Review';
 import axios from 'axios';
 
 const router = Router();
-
-// In-memory cache with 5min TTL for Spotify API data (charts don't change that often)
-interface DiscoverCacheEntry {
-  data: any;
-  timestamp: number;
-  cacheKey: string;
-}
-const discoverCacheMap = new Map<string, DiscoverCacheEntry>();
-const DISCOVER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes for external API data
 
 // Spotify playlist IDs for different regions/moods
 const SPOTIFY_PLAYLISTS = {
@@ -60,20 +53,20 @@ router.get('/', async (req: Request, res: Response) => {
   const { limit = '20', accessToken, region = 'global', force } = req.query as { limit?: string; accessToken?: string; region?: string; force?: string };
   
   if (!accessToken) {
-    return res.status(401).json({ error: 'Spotify access token required for discovery features' });
+    return error(res, 'Spotify access token required for discovery features', 401);
   }
 
-  const cacheKey = `discover_spotify_${region}_${limit}`;
-  const now = Date.now();
-  const wantForce = force === '1' || force === 'true';
+  // Build cache key with region and limit
+  const cacheKey = `${CacheKeys.discoverFeed('global')}_${region}_${limit}`;
+  const forceFetch = force === '1' || force === 'true';
   
-  // Return cached data if fresh and no force refresh
-  const cached = discoverCacheMap.get(cacheKey);
-  if (!wantForce && cached && (now - cached.timestamp) < DISCOVER_CACHE_TTL) {
-    console.log('[DISCOVER] Cache HIT for', cacheKey, '(age=' + (now - cached.timestamp) + 'ms)');
-    res.setHeader('X-Cache', 'HIT');
-    res.setHeader('X-Cache-Age', String(now - cached.timestamp));
-    return res.json({ ...cached.data, cached: true, cacheAge: now - cached.timestamp });
+  // Check cache first (unless forced)
+  if (!forceFetch) {
+    const cached = cache.get<any>(cacheKey);
+    if (cached) {
+      console.log('[DISCOVER] Cache HIT for', cacheKey);
+      return cachedSuccess(res, cached.data, cached.metadata);
+    }
   }
 
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
@@ -276,14 +269,19 @@ router.get('/', async (req: Request, res: Response) => {
       source: 'spotify-charts',
     };
 
-    // Cache the result with region-specific key
-    discoverCacheMap.set(cacheKey, { data: responseData, timestamp: Date.now(), cacheKey });
+    // Cache the result for 5 minutes (long TTL for external API data)
+    cache.set(cacheKey, responseData, CacheTTL.long, 'spotify');
     console.log('[DISCOVER] Cache MISS - fetched fresh Spotify data for', cacheKey);
-    res.setHeader('X-Cache', 'MISS');
-    return res.json(responseData);
-  } catch (error: any) {
-    console.error('Error building discover payload:', error?.message || error);
-    return res.status(500).json({ error: 'Failed to build discover payload' });
+
+    return cachedSuccess(res, responseData, {
+      source: forceFetch ? 'spotify' : 'spotify',
+      cachedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + CacheTTL.long * 1000).toISOString(),
+      isFresh: true,
+    });
+  } catch (err: any) {
+    console.error('Error building discover payload:', err?.message || err);
+    return error(res, 'Failed to build discover payload', 500);
   }
 });
 

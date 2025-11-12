@@ -24,11 +24,11 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import axios from 'axios';
-import User from '../models/User.js';
-import Scrobble from '../models/Scrobble.js';
-import AlbumStats from '../models/AlbumStats.js';
-import TrackStats from '../models/TrackStats.js';
-import UserStatsSummary from '../models/UserStatsSummary.js';
+import User from '../models/User';
+import Scrobble from '../models/Scrobble';
+import AlbumStats from '../models/AlbumStats';
+import TrackStats from '../models/TrackStats';
+import UserStatsSummary from '../models/UserStatsSummary';
 
 dotenv.config();
 

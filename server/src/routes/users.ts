@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
+import { transitionalSuccess, error as respondError } from '../utils/response';
 import mongoose from 'mongoose';
-import User from '../models/User.js';
-import Review from '../models/Review.js';
-import Scrobble from '../models/Scrobble.js';
+import User from '../models/User';
+import Review from '../models/Review';
+import Scrobble from '../models/Scrobble';
+import { requireAuth, requireSelfParam } from '../middleware/auth';
 
 const router = Router();
 
@@ -12,7 +14,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { query, page = '1', limit = '20' } = req.query as { query?: string; page?: string; limit?: string };
     
     if (!query || query.trim().length < 2) {
-      return res.status(400).json({ error: 'Query must be at least 2 characters' });
+  return respondError(res, 'Query must be at least 2 characters', 400);
     }
 
     const pageNum = Math.max(1, parseInt(page));
@@ -20,8 +22,9 @@ router.get('/', async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Case-insensitive regex search on username and displayName
-    // Using text index would be faster but requires explicit index creation
-    const searchRegex = new RegExp(query.trim(), 'i');
+    // Escape regex special characters to prevent errors
+    const escapedQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escapedQuery, 'i');
     
     const [users, totalCount] = await Promise.all([
       User.find({
@@ -52,7 +55,7 @@ router.get('/', async (req: Request, res: Response) => {
       followingCount: (user.following as any[])?.length || 0,
     }));
 
-    res.json({
+    return transitionalSuccess(res, {
       results,
       page: pageNum,
       totalPages: Math.ceil(totalCount / limitNum),
@@ -60,8 +63,8 @@ router.get('/', async (req: Request, res: Response) => {
       hasMore: skip + results.length < totalCount,
     });
   } catch (error: any) {
-    console.error('Error searching users:', error);
-    res.status(500).json({ error: 'Failed to search users' });
+  console.error('Error searching users:', error);
+  return respondError(res, 'Failed to search users', 500);
   }
 });
 
@@ -76,10 +79,10 @@ router.get('/:id/feed', async (req: Request, res: Response) => {
     const { limit = 50, skip = 0 } = req.query as any;
 
     const viewer = await User.findById(id).select('following');
-    if (!viewer) return res.status(404).json({ error: 'Viewer not found' });
+  if (!viewer) return respondError(res, 'Viewer not found', 404);
 
     const followingIds = viewer.following?.map((u: any) => String(u)) || [];
-    if (followingIds.length === 0) return res.json([]);
+  if (followingIds.length === 0) return transitionalSuccess(res, { feed: [] });
 
     const feedDocs = await Review.find({ userId: { $in: followingIds }, isPublic: true })
       .populate('userId', 'displayName profileImage')
@@ -100,10 +103,10 @@ router.get('/:id/feed', async (req: Request, res: Response) => {
       return { ...obj, reactionsCount: counts, userReaction };
     });
 
-    res.json(feed);
+  return transitionalSuccess(res, { feed });
   } catch (error) {
-    console.error('Error fetching friends feed:', error);
-    res.status(500).json({ error: 'Failed to fetch friends feed' });
+  console.error('Error fetching friends feed:', error);
+  return respondError(res, 'Failed to fetch friends feed', 500);
   }
 });
 
@@ -161,7 +164,7 @@ router.get('/:id/mutual-followers', async (req: Request, res: Response) => {
     const { viewerId } = req.query as { viewerId?: string };
 
     if (!viewerId) {
-      return res.status(400).json({ error: 'viewerId required' });
+      return respondError(res, 'viewerId required', 400);
     }
 
     const [user, viewer] = await Promise.all([
@@ -170,7 +173,7 @@ router.get('/:id/mutual-followers', async (req: Request, res: Response) => {
     ]);
 
     if (!user || !viewer) {
-      return res.status(404).json({ error: 'User not found' });
+      return respondError(res, 'User not found', 404);
     }
 
     const userFollowerIds = (user.followers as any[])?.map(f => String(f)) || [];
@@ -179,7 +182,7 @@ router.get('/:id/mutual-followers', async (req: Request, res: Response) => {
     const mutualIds = userFollowerIds.filter(id => viewerFollowerIds.includes(id));
 
     if (mutualIds.length === 0) {
-      return res.json({ mutualFollowers: [], count: 0 });
+      return transitionalSuccess(res, { mutualFollowers: [], count: 0 });
     }
 
     const mutualUsers = await User.find({ _id: { $in: mutualIds } })
@@ -187,7 +190,7 @@ router.get('/:id/mutual-followers', async (req: Request, res: Response) => {
       .limit(10) // Max 10 avatars to display
       .lean();
 
-    res.json({
+    return transitionalSuccess(res, {
       mutualFollowers: mutualUsers.map(u => ({
         _id: u._id,
         username: u.username,
@@ -198,7 +201,7 @@ router.get('/:id/mutual-followers', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error fetching mutual followers:', error);
-    res.status(500).json({ error: 'Failed to fetch mutual followers' });
+  return respondError(res, 'Failed to fetch mutual followers', 500);
   }
 });
 
@@ -208,18 +211,18 @@ router.get('/:id/followers', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { limit = '50' } = req.query as { limit?: string };
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
+      return respondError(res, 'Invalid user ID format', 400);
     }
     const user = await User.findById(id).select('followers').lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user) return respondError(res, 'User not found', 404);
     const followerIds = (user.followers as any[])?.map(f => String(f)) || [];
-    if (followerIds.length === 0) return res.json({ followers: [], count: 0 });
+  if (followerIds.length === 0) return transitionalSuccess(res, { followers: [], count: 0 });
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const followers = await User.find({ _id: { $in: followerIds } })
       .select('_id displayName username profileImage')
       .limit(limitNum)
       .lean();
-    res.json({
+    return transitionalSuccess(res, {
       followers: followers.map(u => ({
         _id: u._id,
         displayName: u.displayName,
@@ -229,8 +232,8 @@ router.get('/:id/followers', async (req: Request, res: Response) => {
       count: followerIds.length,
     });
   } catch (error) {
-    console.error('Error fetching followers list:', error);
-    res.status(500).json({ error: 'Failed to fetch followers' });
+  console.error('Error fetching followers list:', error);
+  return respondError(res, 'Failed to fetch followers', 500);
   }
 });
 
@@ -240,18 +243,18 @@ router.get('/:id/following', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { limit = '50' } = req.query as { limit?: string };
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
+      return respondError(res, 'Invalid user ID format', 400);
     }
     const user = await User.findById(id).select('following').lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user) return respondError(res, 'User not found', 404);
     const followingIds = (user.following as any[])?.map(f => String(f)) || [];
-    if (followingIds.length === 0) return res.json({ following: [], count: 0 });
+  if (followingIds.length === 0) return transitionalSuccess(res, { following: [], count: 0 });
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const following = await User.find({ _id: { $in: followingIds } })
       .select('_id displayName username profileImage')
       .limit(limitNum)
       .lean();
-    res.json({
+    return transitionalSuccess(res, {
       following: following.map(u => ({
         _id: u._id,
         displayName: u.displayName,
@@ -261,8 +264,8 @@ router.get('/:id/following', async (req: Request, res: Response) => {
       count: followingIds.length,
     });
   } catch (error) {
-    console.error('Error fetching following list:', error);
-    res.status(500).json({ error: 'Failed to fetch following' });
+  console.error('Error fetching following list:', error);
+  return respondError(res, 'Failed to fetch following', 500);
   }
 });
 
@@ -285,20 +288,20 @@ router.get('/:id', async (req: Request, res: Response) => {
     // Validate MongoDB ObjectId format
     if (!mongoose.Types.ObjectId.isValid(id)) {
       console.log('[GET /users/:id] Invalid MongoDB ObjectId:', id);
-      return res.status(400).json({ error: 'Invalid user ID format' });
+      return respondError(res, 'Invalid user ID format', 400);
     }
 
     const user = await User.findById(id).select('_id spotifyId displayName email profileImage followers following username bio instagramUsername twitterHandle location favAlbums favTracks');
     if (!user) {
       console.log('[GET /users/:id] User not found:', id);
-      return res.status(404).json({ error: 'User not found' });
+      return respondError(res, 'User not found', 404);
     }
 
     const followersCount = user.followers?.length || 0;
     const followingCount = user.following?.length || 0;
     const isFollowing = viewerId ? user.followers?.some(u => String(u) === String(viewerId)) : false;
 
-    res.json({
+    return transitionalSuccess(res, {
       _id: user._id,
       spotifyId: user.spotifyId,
       displayName: user.displayName,
@@ -316,18 +319,17 @@ router.get('/:id', async (req: Request, res: Response) => {
       isFollowing,
     });
   } catch (error: any) {
-    console.error('Error fetching profile:', error);
-    res.status(500).json({ error: 'Failed to fetch profile' });
+  console.error('Error fetching profile:', error);
+  return respondError(res, 'Failed to fetch profile', 500);
   }
 });
 
 // Follow user
-router.post('/:id/follow', async (req: Request, res: Response) => {
+router.post('/:id/follow', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params; // target user
-    const { followerId } = req.body as { followerId?: string };
-
-    if (!followerId) return res.status(400).json({ error: 'followerId required' });
+    const followerId = String((req as any).authUser?._id || '');
+    if (!followerId) return res.status(401).json({ error: 'Authentication required' });
     if (id === followerId) return res.status(400).json({ error: 'Cannot follow yourself' });
 
     const session = await mongoose.startSession();
@@ -360,12 +362,11 @@ router.post('/:id/follow', async (req: Request, res: Response) => {
 });
 
 // Unfollow user
-router.post('/:id/unfollow', async (req: Request, res: Response) => {
+router.post('/:id/unfollow', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params; // target user
-    const { followerId } = req.body as { followerId?: string };
-
-    if (!followerId) return res.status(400).json({ error: 'followerId required' });
+    const followerId = String((req as any).authUser?._id || '');
+    if (!followerId) return res.status(401).json({ error: 'Authentication required' });
     if (id === followerId) return res.status(400).json({ error: 'Cannot unfollow yourself' });
 
     const session = await mongoose.startSession();
@@ -398,7 +399,7 @@ router.post('/:id/unfollow', async (req: Request, res: Response) => {
 });
 
 // Update username
-router.put('/:id/username', async (req: Request, res: Response) => {
+router.put('/:id/username', requireAuth, requireSelfParam('id'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { username } = req.body as { username?: string };
@@ -418,7 +419,7 @@ router.put('/:id/username', async (req: Request, res: Response) => {
 });
 
 // Update full profile (bio, social links, location)
-router.put('/:id/profile', async (req: Request, res: Response) => {
+router.put('/:id/profile', requireAuth, requireSelfParam('id'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { bio, instagramUsername, twitterHandle, location } = req.body as {
@@ -473,7 +474,7 @@ router.put('/:id/profile', async (req: Request, res: Response) => {
 });
 
 // Update favorites (max 4 each)
-router.put('/:id/favorites', async (req: Request, res: Response) => {
+router.put('/:id/favorites', requireAuth, requireSelfParam('id'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { favAlbums, favTracks } = req.body as {

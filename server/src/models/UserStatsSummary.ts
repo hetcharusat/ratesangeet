@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
 export interface ILastScrobble {
   spotifyId?: string;
@@ -9,7 +9,7 @@ export interface ILastScrobble {
 }
 
 export interface IUserStatsSummary extends Document {
-  userId: string;
+  userId: Types.ObjectId; // ref to User
   totalScrobbles: number;
   lastScrobbled?: ILastScrobble;
   createdAt: Date;
@@ -26,7 +26,7 @@ const LastScrobbleSchema = new Schema<ILastScrobble>({
 
 const UserStatsSummarySchema = new Schema<IUserStatsSummary>(
   {
-    userId: { type: String, required: true, unique: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
     totalScrobbles: { type: Number, required: true, default: 0 },
     lastScrobbled: { type: LastScrobbleSchema },
   },

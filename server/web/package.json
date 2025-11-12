@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "spotify-tracker-server": "file:.."
+  }
+}

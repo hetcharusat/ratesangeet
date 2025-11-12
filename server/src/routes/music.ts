@@ -2,14 +2,21 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
-import Scrobble from '../models/Scrobble.js';
-import UserStatsSummary from '../models/UserStatsSummary.js';
-import AlbumStats from '../models/AlbumStats.js';
-import TrackStats from '../models/TrackStats.js';
-import CompletionEvent from '../models/CompletionEvent.js';
-import User from '../models/User.js';
+import Scrobble from '../models/Scrobble';
+import UserStatsSummary from '../models/UserStatsSummary';
+import AlbumStats from '../models/AlbumStats';
+import TrackStats from '../models/TrackStats';
+import CompletionEvent from '../models/CompletionEvent';
+import User from '../models/User';
+import { spotifyClient } from '../utils/spotifyClient';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
+import { error as respondError, transitionalSuccess } from '../utils/response';
+import { batchUpsertRateLimiter } from '../middleware/optimization';
+import { parseUserId } from '../middleware/parseUserId';
+import { HybridNormalizationService } from '../services/HybridNormalizationService';
 
 const router = Router();
+
 const CLOUD_ENABLE_SCROBBLES = (process.env.CLOUD_ENABLE_SCROBBLES ?? 'true') !== 'false';
 const CLOUD_SCROBBLE_RETENTION_DAYS = Number(process.env.CLOUD_SCROBBLE_RETENTION_DAYS) || 30;
 const SKIP_DETECTION_ENABLED = process.env.BACKGROUND_SCROBBLE_SKIP_DETECTION !== 'false'; // Enable by default
@@ -82,29 +89,56 @@ router.get('/top-tracks', async (req: Request, res: Response) => {
 
 // Search Music - Returns albums first, then tracks
 router.get('/search', async (req: Request, res: Response) => {
-  const { accessToken, q, type = 'track,album' } = req.query;
-
-  if (!accessToken || !q) {
-    return res.status(400).json({ error: 'Access token and query required' });
+  const { q, type = 'track,album', userId, accessToken, force } = req.query as { q?: string; type?: string; userId?: string; accessToken?: string; force?: string };
+  if (!q) {
+    return res.status(400).json({ error: 'q (query) required' });
   }
-
+  // Build cache key – differentiate anonymous vs user-based for isolation
+  const cacheKeyBase = userId ? CacheKeys.spotifySearch(q.toLowerCase(), type) : `spotify:search:anon:${type}:${q.toLowerCase()}`;
   try {
-    const response = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(q as string)}&type=${type}&limit=20`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        timeout: 15000, // 15 second timeout for Spotify API
+    const forceFetch = force === '1' || force === 'true';
+    if (!forceFetch) {
+      const cached = cache.get<any>(cacheKeyBase);
+      if (cached) {
+        return transitionalSuccess(res, cached.data, { cache: cached.metadata });
       }
-    );
-
-    // Return in original format for backward compatibility
-    res.json(response.data);
-  } catch (error: any) {
-    console.error('Error searching music:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ 
-      error: 'Search failed',
-      message: error.message 
-    });
+    }
+    const types = type.split(',');
+    const result: any = {};
+    if (userId) {
+      // Preferred path: userId enables token refresh logic
+      for (const t of types) {
+        if (!['track','album','artist'].includes(t)) continue;
+        const api = await spotifyClient.search(q, t as any, userId, 20);
+        if (api.refreshedToken) result.refreshedToken = api.refreshedToken;
+        if (t === 'track') result.tracks = api.data.tracks;
+        if (t === 'album') result.albums = api.data.albums;
+        if (t === 'artist') result.artists = (api.data as any).artists;
+      }
+    } else if (accessToken) {
+      // Anonymous fallback: use raw access token without refresh
+      for (const t of types) {
+        if (!['track','album','artist'].includes(t)) continue;
+        try {
+          const resp = await axios.get(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=${t}&limit=20`, {
+            headers: { Authorization: `Bearer ${accessToken}` }, timeout: 10000,
+          });
+          const data = resp.data;
+          if (t === 'track') result.tracks = data.tracks;
+          if (t === 'album') result.albums = data.albums;
+          if (t === 'artist') result.artists = data.artists;
+        } catch (e: any) {
+          console.warn(`[SEARCH] Fallback search failed for type=${t}:`, e.response?.status || e.message);
+        }
+      }
+    } else {
+      return res.status(400).json({ error: 'Either userId or accessToken required' });
+    }
+  cache.set(cacheKeyBase, result, CacheTTL.long, 'spotify');
+  return transitionalSuccess(res, result, { cache: { source: 'spotify', cachedAt: new Date().toISOString(), expiresAt: new Date(Date.now()+CacheTTL.long*1000).toISOString(), isFresh: true }, refreshedToken: (result as any).refreshedToken });
+  } catch (err: any) {
+    console.error('[SEARCH] Error:', err.message);
+    respondError(res, err.message || 'Search failed', err.statusCode || 500);
   }
 });
 
@@ -203,7 +237,11 @@ router.get('/album', async (req: Request, res: Response) => {
 
     res.json(response.data);
   } catch (error: any) {
-    console.error('Error fetching album details:', error.response?.data || error.message);
+    // Avoid flooding logs for routine 401s when an expired token hits many albums in a batch
+    const status = error?.response?.status;
+    if (status !== 401) {
+      console.error('Error fetching album details:', error.response?.data || error.message);
+    }
     res.status(error.response?.status || 500).json({
       error: 'Failed to fetch album details',
     });
@@ -212,78 +250,92 @@ router.get('/album', async (req: Request, res: Response) => {
 
 // Get currently playing track (for scrobbling)
 router.get('/currently-playing', async (req: Request, res: Response) => {
-  const { accessToken } = req.query;
-
-  if (!accessToken) {
-    return res.status(400).json({ error: 'Access token required' });
-  }
-
+  const { userId, accessToken } = req.query as { userId?: string; accessToken?: string };
+  if (!userId && !accessToken) return res.status(400).json({ error: 'userId or accessToken required' });
   try {
-    const response = await axios.get(
-      'https://api.spotify.com/v1/me/player/currently-playing',
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-
-    if (response.status === 204 || !response.data) {
-      return res.json({ isPlaying: false });
+    if (userId) {
+      const api = await spotifyClient.getCurrentlyPlaying(userId);
+      const cp = api.data;
+      if (!cp || !cp.item) return transitionalSuccess(res, { isPlaying: false });
+      const result: any = {
+        isPlaying: cp.is_playing,
+        track: cp.item,
+        progressMs: cp.progress_ms,
+        timestamp: cp.timestamp,
+      };
+      return transitionalSuccess(res, result, { refreshedToken: api.refreshedToken });
     }
-
-    res.json({
-      isPlaying: response.data.is_playing,
-      track: response.data.item,
-      progressMs: response.data.progress_ms,
-      timestamp: response.data.timestamp,
+    // Fallback anonymous access
+    const resp = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+      headers: { Authorization: `Bearer ${accessToken}` }, timeout: 8000,
     });
-  } catch (error: any) {
-    console.error('Error fetching currently playing:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ 
-      error: 'Failed to fetch currently playing track' 
+    if (resp.status === 204 || !resp.data) return transitionalSuccess(res, { isPlaying: false });
+    return transitionalSuccess(res, {
+      isPlaying: resp.data.is_playing,
+      track: resp.data.item,
+      progressMs: resp.data.progress_ms,
+      timestamp: resp.data.timestamp,
     });
+  } catch (err: any) {
+    console.error('[CURRENTLY PLAYING] Error:', err.message);
+    const status = err.statusCode || err.response?.status || 500;
+    res.status(status).json({ error: err.message || 'Failed to fetch currently playing track' });
   }
 });
 
 // Get recently played tracks (for auto-scrobbling)
 router.get('/recently-played', async (req: Request, res: Response) => {
-  const { accessToken, limit = 50 } = req.query;
-
-  if (!accessToken) {
-    return res.status(400).json({ error: 'Access token required' });
-  }
-
+  const { userId, accessToken, limit = 50, force } = req.query as { userId?: string; accessToken?: string; limit?: string | number; force?: string };
+  if (!userId && !accessToken) return res.status(400).json({ error: 'userId or accessToken required' });
+  const lim = Number(limit) || 50;
   try {
-    const response = await axios.get(
-      `https://api.spotify.com/v1/me/player/recently-played?limit=${limit}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
+    const cacheKey = userId ? CacheKeys.userRecentTracks(userId) : 'user:anon:recent';
+    const forceFetch = force === '1' || force === 'true';
+    if (!forceFetch) {
+      const cached = cache.get<any>(cacheKey);
+      if (cached) {
+        return transitionalSuccess(res, cached.data, { cache: cached.metadata });
       }
-    );
-
-    res.json(response.data);
-  } catch (error: any) {
-    console.error('Error fetching recently played:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ 
-      error: 'Failed to fetch recently played tracks' 
-    });
+    }
+    let items: any[] = [];
+    let refreshedToken: string | undefined;
+    if (userId) {
+      const api = await spotifyClient.getRecentlyPlayed(userId, lim);
+      items = api.data?.items || [];
+      refreshedToken = api.refreshedToken;
+    } else if (accessToken) {
+      try {
+        const resp = await axios.get(`https://api.spotify.com/v1/me/player/recently-played?limit=${lim}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }, timeout: 10000,
+        });
+        items = resp.data?.items || [];
+      } catch (e: any) {
+        console.error('[RECENTLY PLAYED] Fallback error:', e.response?.status || e.message);
+      }
+    }
+  const result = { items };
+  cache.set(cacheKey, result, CacheTTL.short, 'spotify');
+  return transitionalSuccess(res, result, { cache: { source: 'spotify', cachedAt: new Date().toISOString(), expiresAt: new Date(Date.now()+CacheTTL.short*1000).toISOString(), isFresh: true }, refreshedToken });
+  } catch (err: any) {
+    console.error('[RECENTLY PLAYED] Error:', err.message);
+    const status = err.statusCode || err.response?.status || 500;
+    res.status(status).json({ error: 'Failed to fetch recently played tracks', message: err.message });
   }
 });
 
 // Create a scrobble entry based on the user's currently playing track
-router.post('/scrobble', async (req: Request, res: Response) => {
-  const { accessToken, userId } = req.body;
+router.post('/scrobble', parseUserId, async (req: Request, res: Response) => {
+  const { accessToken } = req.body;
+  const userId = req.userId!; // Already validated by parseUserId middleware
 
-  if (!accessToken || !userId) {
-    return res.status(400).json({ error: 'Access token and userId required' });
+  if (!accessToken) {
+    return res.status(400).json({ error: 'Access token required' });
   }
 
   // ROOT FIX: Ensure user exists BEFORE allowing scrobble so we never end up with
   // scrobbles referencing a missing user document. If it's missing, attempt to
   // reconstruct minimal User from Spotify /me. If that fails, instruct client to re-auth.
   try {
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: 'Invalid userId format' });
-    }
     let userDoc = await User.findById(userId).select('_id spotifyId displayName username');
     if (!userDoc) {
       // Attempt recovery using Spotify profile
@@ -325,13 +377,13 @@ router.post('/scrobble', async (req: Request, res: Response) => {
     );
 
     if (response.status === 204 || !response.data?.item) {
-      return res.json({ scrobbled: false, message: 'Nothing currently playing' });
+      return transitionalSuccess(res, { scrobbled: false, message: 'Nothing currently playing' });
     }
 
     const { item, is_playing, progress_ms, timestamp } = response.data;
 
     if (!is_playing || !item) {
-      return res.json({ scrobbled: false, message: 'Playback is paused' });
+      return transitionalSuccess(res, { scrobbled: false, message: 'Playback is paused' });
     }
 
     const progressMs = progress_ms ?? 0;
@@ -340,7 +392,7 @@ router.post('/scrobble', async (req: Request, res: Response) => {
     
     // Only scrobble if track is played 40% or more
     if (progressMs < minProgressForScrobble || durationMs === 0) {
-      return res.json({ scrobbled: false, message: 'Minimum play time not reached (40%)' });
+      return transitionalSuccess(res, { scrobbled: false, message: 'Minimum play time not reached (40%)' });
     }
 
     // ROOT FIX: Round timestamp to prevent duplicates
@@ -377,7 +429,7 @@ router.post('/scrobble', async (req: Request, res: Response) => {
         );
       } catch {}
 
-      return res.json({
+      return transitionalSuccess(res, {
         scrobbled: true,
         scrobble: {
           _id: 'local-only',
@@ -394,6 +446,27 @@ router.post('/scrobble', async (req: Request, res: Response) => {
           updatedAt: new Date().toISOString(),
         },
       });
+    }
+
+    // HYBRID: Create/find normalized entities (Track, Album, Artist)
+    let trackId, albumRefId, artistId;
+    if (item.album?.id) {
+      try {
+        const normalized = await HybridNormalizationService.normalizeScrobbleData({
+          spotifyId: item.id,
+          trackName,
+          artistName,
+          albumSpotifyId: item.album.id,
+          albumName: albumName || 'Unknown Album',
+          albumArt,
+          durationMs,
+        });
+        trackId = normalized.trackId;
+        albumRefId = normalized.albumId;
+        artistId = normalized.artistId;
+      } catch (err: any) {
+        console.warn('[SCROBBLE][HYBRID] Failed to normalize:', err.message);
+      }
     }
 
     const scrobble = await Scrobble.findOneAndUpdate(
@@ -416,6 +489,10 @@ router.post('/scrobble', async (req: Request, res: Response) => {
           albumName,
           albumArt,
           durationMs,
+          // Hybrid references
+          ...(trackId && { trackId }),
+          ...(albumRefId && { albumRefId }),
+          ...(artistId && { artistId }),
         },
       },
       { upsert: true, new: true }
@@ -427,85 +504,86 @@ router.post('/scrobble', async (req: Request, res: Response) => {
       const albumNameSafe: string = albumName || 'Unknown Album';
       const albumKey: string = albumId || albumNameSafe;
 
-      // 1) Upsert base stats and increment playCount
-      const stats = await AlbumStats.findOneAndUpdate(
-        { userId: String(userId), albumKey },
-        {
-          $setOnInsert: {
-            albumId,
-            albumKey,
-            albumName: albumNameSafe,
-            artistName,
-            albumArt,
-            totalTracks: undefined,
-            completedPlays: 0,
-          },
-          $set: { lastPlayedAt: playedAt, albumArt, artistName, albumName: albumNameSafe },
-          $inc: { playCount: 1 },
-        },
-        { upsert: true, new: true }
-      );
-
-      // 2) Ensure totalTracks exists (one-time fetch) if albumId present
-      let totalTracks = stats.totalTracks;
-      if (!totalTracks && albumId) {
+      // Fetch totalTracks FIRST (V2 Contract: only track albums with ≥4 tracks)
+      let totalTracks: number | undefined = undefined;
+      if (albumId) {
         try {
           const albumResp = await axios.get(`https://api.spotify.com/v1/albums/${albumId}`, {
             headers: { Authorization: `Bearer ${accessToken}` },
           });
           totalTracks = albumResp.data?.total_tracks || albumResp.data?.tracks?.total || 0;
-          if (totalTracks && totalTracks > 0) {
-            await AlbumStats.updateOne(
-              { _id: stats._id },
-              { $set: { totalTracks } }
-            );
-          }
         } catch {}
       }
 
-      // 3) If we know totalTracks, update per-cycle progress to count multiple full plays.
-      if (totalTracks && totalTracks > 0) {
-        // Reload fresh snapshot to get currentCycleUniqueTrackIds
-        const fresh = await AlbumStats.findById(stats._id).select('currentCycleUniqueTrackIds completedPlays').lean();
-        const seen: string[] = Array.isArray(fresh?.currentCycleUniqueTrackIds) ? fresh!.currentCycleUniqueTrackIds : [];
-        const already = seen.includes(item.id);
-        if (!already) {
-          seen.push(item.id);
-        }
-        if (seen.length >= totalTracks) {
-          // Completion achieved for this cycle
-          await AlbumStats.updateOne(
-            { _id: stats._id },
-            {
-              $inc: { completedPlays: 1 },
-              $set: { lastCompletedAt: playedAt, currentCycleUniqueTrackIds: [] },
-            }
-          );
-          // Emit a completion event for time-series analytics
-          try {
-            await CompletionEvent.create({
-              userId: String(userId),
+      // Skip albums with <4 tracks (singles/EPs)
+      if (!totalTracks || totalTracks < 4) {
+        // Don't create AlbumStats for singles/EPs
+        console.log(`[SCROBBLE] Skipping album ${albumNameSafe} (totalTracks: ${totalTracks})`);
+      } else {
+        // 1) Upsert base stats and increment playCount
+        const stats = await AlbumStats.findOneAndUpdate(
+          { userId, albumKey },
+          {
+            $setOnInsert: {
               albumId,
               albumKey,
               albumName: albumNameSafe,
               artistName,
               albumArt,
-              completedAt: playedAt,
-            });
-          } catch {}
-        } else if (!already) {
-          // Persist partial progress for the current cycle
-          await AlbumStats.updateOne(
-            { _id: stats._id },
-            { $set: { currentCycleUniqueTrackIds: seen } }
-          );
+              totalTracks, // Set totalTracks on creation
+              albumPlayCount: 0,
+              uniqueTracksPlayed: [], // Initialize empty array
+            },
+            $set: { lastPlayedAt: playedAt, albumArt, artistName, albumName: albumNameSafe },
+            $inc: { playCount: 1 },
+          },
+          { upsert: true, new: true }
+        );
+
+        // 2) Update per-cycle progress to count multiple full plays.
+        if (totalTracks && totalTracks > 0) {
+          // Reload fresh snapshot to get uniqueTracksPlayed
+          const fresh = await AlbumStats.findById(stats._id).select('uniqueTracksPlayed albumPlayCount').lean();
+          const seen: string[] = Array.isArray(fresh?.uniqueTracksPlayed) ? fresh!.uniqueTracksPlayed : [];
+          const already = seen.includes(item.id);
+          if (!already) {
+            seen.push(item.id);
+          }
+          if (seen.length >= totalTracks) {
+            // Completion achieved for this cycle
+            await AlbumStats.updateOne(
+              { _id: stats._id },
+              {
+                $inc: { albumPlayCount: 1 },
+                $set: { lastCompletedAt: playedAt, uniqueTracksPlayed: [] },
+              }
+            );
+            // Emit a completion event for time-series analytics
+            try {
+              await CompletionEvent.create({
+                userId,
+                albumId,
+                albumKey,
+                albumName: albumNameSafe,
+                artistName,
+                albumArt,
+                completedAt: playedAt,
+              });
+            } catch {}
+          } else if (!already) {
+            // Persist partial progress for the current cycle
+            await AlbumStats.updateOne(
+              { _id: stats._id },
+              { $set: { uniqueTracksPlayed: seen } }
+            );
+          }
         }
-      }
+      } // Close else block for albums with >=4 tracks
     } catch (e) {
       console.warn('[SCROBBLE] AlbumStats update skipped:', (e as any)?.message || e);
     }
 
-    return res.json({ scrobbled: true, scrobble });
+  return transitionalSuccess(res, { scrobbled: true, scrobble });
   } catch (error: any) {
     console.error('Error scrobbling track:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
@@ -514,7 +592,387 @@ router.post('/scrobble', async (req: Request, res: Response) => {
   }
 });
 
-// Fetch scrobbles for a user
+// Test route to verify new routes register
+router.get('/test-v2', (_req: Request, res: Response) => {
+  res.json({ ok: true, message: 'V2 routes working!' });
+});
+
+// =====================================================================
+// V2: Batch Upsert Scrobbles (Client-Side Detection, 40% Threshold)
+// Rate limit: 100 requests/min
+// =====================================================================
+router.post('/scrobbles/batch-upsert', batchUpsertRateLimiter, async (req: Request, res: Response) => {
+  console.log('[BATCH UPSERT] Request received:', { userId: req.body.userId, itemsCount: req.body.items?.length });
+  const { userId, accessToken, items } = req.body;
+
+  if (!userId || !accessToken || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'userId, accessToken, and items[] required' });
+  }
+
+  if (items.length > 100) {
+    return res.status(400).json({ error: 'Max 100 items per batch' });
+  }
+
+  // Validate userId format
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid userId format' });
+  }
+
+  // Import SpotifyService
+  const { spotifyService } = await import('../services/SpotifyService.js');
+
+  const results = {
+    ok: true,
+    processed: 0,
+    scrobbled: 0,
+    skipped: 0,
+    duplicates: 0,
+    errors: [] as string[],
+  };
+
+  try {
+    for (const item of items) {
+      try {
+        results.processed++;
+
+        const {
+          spotifyId,
+          trackName,
+          artistName,
+          albumId,
+          albumName,
+          albumArt,
+          durationMs,
+          progressMs,
+          timestamp,
+          device,
+          clientVersion,
+        } = item;
+
+        // Validate required fields
+        if (!spotifyId || !trackName || !artistName || durationMs === undefined || progressMs === undefined) {
+          results.errors.push(`Missing required fields for item ${results.processed}`);
+          continue;
+        }
+
+        // Calculate isScrobbled (40% threshold OR >= 30s)
+        const isScrobbled = (progressMs / durationMs >= 0.4) || (progressMs >= 30000);
+
+        // Calculate playedAtRounded10s (stable dedup key)
+        const startedAtMs = (timestamp || Date.now()) - progressMs;
+        const roundedStartMs = Math.floor(startedAtMs / 10000) * 10000;
+        const playedAt = new Date(roundedStartMs);
+        const playedAtRounded10s = new Date(roundedStartMs);
+
+        // HYBRID: Create/find normalized entities (Track, Album, Artist)
+        let trackId, albumRefId, artistId;
+        if (albumId && isScrobbled) {
+          try {
+            const normalized = await HybridNormalizationService.normalizeScrobbleData({
+              spotifyId,
+              trackName,
+              artistName,
+              albumSpotifyId: albumId,
+              albumName: albumName || 'Unknown Album',
+              albumArt,
+              durationMs,
+            });
+            trackId = normalized.trackId;
+            albumRefId = normalized.albumId;
+            artistId = normalized.artistId;
+          } catch (err: any) {
+            console.warn('[BATCH UPSERT][HYBRID] Failed to normalize:', err.message);
+          }
+        }
+
+        // Upsert scrobbles_recent (TTL 90d)
+        const scrobbleDoc = await Scrobble.findOneAndUpdate(
+          { userId, spotifyId, playedAtRounded10s },
+          {
+            $setOnInsert: {
+              userId,
+              spotifyId,
+              playedAt,
+              playedAtRounded10s,
+              source: 'spotify',
+            },
+            $set: {
+              trackName,
+              artistName,
+              albumId,
+              albumName,
+              albumArt,
+              durationMs,
+              device,
+              clientVersion,
+              isScrobbled,
+              isSkip: !isScrobbled,
+              // Hybrid references
+              ...(trackId && { trackId }),
+              ...(albumRefId && { albumRefId }),
+              ...(artistId && { artistId }),
+            },
+          },
+          { upsert: true, new: true }
+        );
+
+        // If duplicate (not newly created), skip stats update
+        if (scrobbleDoc && scrobbleDoc.createdAt && new Date(scrobbleDoc.createdAt).getTime() < Date.now() - 1000) {
+          results.duplicates++;
+          continue;
+        }
+
+        if (!isScrobbled) {
+          results.skipped++;
+          continue;
+        }
+
+        results.scrobbled++;
+
+        // ========== Update TrackStats (with replay guard) ==========
+        const trackKey = spotifyId || `${artistName}::${trackName}`;
+        const existingTrack = await TrackStats.findOne({ userId, trackKey }).select('lastPlayedAt replayGuardAt').lean();
+
+        const replayGuardMs = 15 * 60 * 1000; // 15 minutes
+        const shouldUpdateTrack = !existingTrack?.lastPlayedAt || (playedAt.getTime() - new Date(existingTrack.lastPlayedAt).getTime() >= replayGuardMs);
+
+        if (shouldUpdateTrack) {
+          await TrackStats.findOneAndUpdate(
+            { userId, trackKey },
+            {
+              $setOnInsert: {
+                trackId: spotifyId,
+                trackKey,
+              },
+              $set: {
+                trackName,
+                artistName,
+                albumName,
+                albumArt,
+                lastPlayedAt: playedAt,
+                replayGuardAt: playedAt, // Use playedAt for guard, not processing time
+              },
+              $inc: { playCount: 1 },
+            },
+            { upsert: true }
+          );
+        }
+
+        // ========== Update AlbumStats (4-track min, 70% completion) ==========
+        if (!albumId) continue; // Skip albums without IDs
+
+        // Fetch totalTracks (cached)
+        const totalTracks = await spotifyService.getAlbumTotalTracks(albumId, accessToken);
+        if (!totalTracks || totalTracks < 4) {
+          // Skip singles/EPs (< 4 tracks)
+          continue;
+        }
+
+        const albumKey = albumId || albumName || 'Unknown Album';
+        const albumStats = await AlbumStats.findOneAndUpdate(
+          { userId, albumKey },
+          {
+            $setOnInsert: {
+              albumId,
+              albumKey,
+              totalTracks,
+              albumPlayCount: 0,
+              uniqueTracksPlayed: [],
+            },
+            $set: {
+              albumName,
+              artistName,
+              albumArt,
+              lastPlayedAt: playedAt,
+            },
+            $inc: { playCount: 1 },
+          },
+          { upsert: true, new: true }
+        );
+
+        // Add track to uniqueTracksPlayed (if not already present)
+        const uniqueTracks = Array.isArray(albumStats.uniqueTracksPlayed) ? albumStats.uniqueTracksPlayed : [];
+        if (!uniqueTracks.includes(spotifyId)) {
+          uniqueTracks.push(spotifyId);
+
+          // Check if 70% threshold reached
+          const progressPercent = (uniqueTracks.length / totalTracks) * 100;
+          if (progressPercent >= 70) {
+            // Completion achieved! Increment albumPlayCount, reset cycle
+            await AlbumStats.updateOne(
+              { _id: albumStats._id },
+              {
+                $inc: { albumPlayCount: 1 },
+                $set: {
+                  uniqueTracksPlayed: [], // Reset for new cycle
+                  lastCompletedAt: playedAt,
+                },
+              }
+            );
+
+            // Emit completion event (optional analytics)
+            try {
+              await CompletionEvent.create({
+                userId,
+                albumId,
+                albumKey,
+                albumName: albumName || 'Unknown Album',
+                artistName,
+                albumArt,
+                completedAt: playedAt,
+              });
+            } catch (e) {
+              console.warn('[BATCH UPSERT] CompletionEvent failed:', (e as any)?.message);
+            }
+          } else {
+            // Partial progress: update uniqueTracksPlayed
+            await AlbumStats.updateOne(
+              { _id: albumStats._id },
+              { $set: { uniqueTracksPlayed: uniqueTracks } }
+            );
+          }
+        }
+
+        // ========== Update UserStatsSummary ==========
+        await UserStatsSummary.findOneAndUpdate(
+          { userId },
+          {
+            $inc: { totalScrobbles: 1 },
+            $set: {
+              lastScrobbled: {
+                spotifyId,
+                trackName,
+                artistName,
+                albumName,
+                playedAt,
+              },
+            },
+          },
+          { upsert: true }
+        );
+      } catch (itemError: any) {
+        results.errors.push(`Item ${results.processed}: ${itemError.message}`);
+      }
+    }
+
+    return res.json(results);
+  } catch (error: any) {
+    console.error('[BATCH UPSERT] Fatal error:', error.message);
+    return res.status(500).json({
+      error: 'Batch upsert failed',
+      message: error.message,
+      results,
+    });
+  }
+});
+
+// =====================================================================
+// V2: Get Recent Scrobbles (Paginated, Minimal Projection)
+// =====================================================================
+router.get('/scrobbles/recent', async (req: Request, res: Response) => {
+  const { userId, limit = 20, before, includeSkips } = req.query as {
+    userId?: string;
+    limit?: string;
+    before?: string; // ISO date cursor
+    includeSkips?: string;
+  };
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
+
+  const parsedLimit = Math.min(Number(limit) || 20, 100); // Max 100
+  const query: any = { userId };
+
+  // Exclude skips by default (unless includeSkips=1)
+  if (includeSkips !== '1' && includeSkips !== 'true') {
+    query.isScrobbled = true;
+  }
+
+  // Pagination cursor
+  if (before) {
+    query.playedAt = { $lt: new Date(before) };
+  }
+
+  try {
+    const scrobbles = await Scrobble.find(query)
+      .sort({ playedAt: -1 })
+      .limit(parsedLimit)
+      .select('spotifyId trackName artistName albumId albumName albumArt durationMs playedAt isScrobbled device')
+      .lean();
+
+    const nextCursor = scrobbles.length === parsedLimit ? scrobbles[scrobbles.length - 1].playedAt : null;
+
+    res.json({
+      items: scrobbles,
+      nextCursor: nextCursor ? new Date(nextCursor).toISOString() : null,
+      hasMore: scrobbles.length === parsedLimit,
+    });
+  } catch (error: any) {
+    console.error('[GET SCROBBLES/RECENT] Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch recent scrobbles' });
+  }
+});
+
+// =====================================================================
+// V2: Get Archive-Ready Scrobbles (>83 days old, for device archive)
+// =====================================================================
+router.get('/scrobbles/archive-ready', async (req: Request, res: Response) => {
+  const { userId, before } = req.query as { userId?: string; before?: string };
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
+
+  // Default: scrobbles older than 83 days (7 days before TTL expires)
+  const cutoffDate = before ? new Date(before) : new Date(Date.now() - 83 * 24 * 60 * 60 * 1000);
+
+  try {
+    const scrobbles = await Scrobble.find({
+      userId,
+      playedAt: { $lt: cutoffDate },
+    })
+      .sort({ playedAt: 1 }) // Oldest first
+      .limit(1000) // Max 1000 per pull
+      .select('_id spotifyId trackName artistName albumId albumName albumArt durationMs playedAt playedAtRounded10s isScrobbled device clientVersion')
+      .lean();
+
+    res.json({ items: scrobbles, count: scrobbles.length });
+  } catch (error: any) {
+    console.error('[GET SCROBBLES/ARCHIVE-READY] Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch archive-ready scrobbles' });
+  }
+});
+
+// =====================================================================
+// V2: Acknowledge Archive (Delete after device saves)
+// =====================================================================
+router.post('/scrobbles/ack-archive', async (req: Request, res: Response) => {
+  const { userId, ids } = req.body as { userId?: string; ids?: string[] };
+
+  if (!userId || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'userId and ids[] required' });
+  }
+
+  try {
+    const result = await Scrobble.deleteMany({
+      userId,
+      _id: { $in: ids },
+    });
+
+    res.json({
+      ok: true,
+      deleted: result.deletedCount,
+    });
+  } catch (error: any) {
+    console.error('[POST SCROBBLES/ACK-ARCHIVE] Error:', error.message);
+    res.status(500).json({ error: 'Failed to acknowledge archive' });
+  }
+});
+
+// =====================================================================
+// LEGACY: Get All Scrobbles (Keep for backward compatibility)
+// =====================================================================
 router.get('/scrobbles', async (req: Request, res: Response) => {
   const { userId, limit = 50 } = req.query;
 
@@ -537,12 +995,9 @@ router.get('/scrobbles', async (req: Request, res: Response) => {
 });
 
 // Get listening stats for a user
-router.get('/listening-stats', async (req: Request, res: Response) => {
-  const { userId, accessToken, force } = req.query as { userId?: string; accessToken?: string; force?: string };
-
-  if (!userId) {
-    return res.status(400).json({ error: 'userId required' });
-  }
+router.get('/listening-stats', parseUserId, async (req: Request, res: Response) => {
+  const { accessToken, force } = req.query as { accessToken?: string; force?: string };
+  const userId = req.userId!; // Validated by parseUserId middleware
 
   try {
     const cacheKey = `stats_${userId}`;
@@ -744,12 +1199,12 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
 
     // Derive album completion sparkline from CompletionEvent (accurate per-completion events)
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const completionEvents = await CompletionEvent.find({ userId: String(userId), completedAt: { $gte: since } })
+    const completionEvents = await CompletionEvent.find({ userId, completedAt: { $gte: since } })
       .select('albumName artistName albumArt completedAt')
       .sort({ completedAt: -1 })
       .lean();
-    const albumStatsDocs = await AlbumStats.find({ userId: String(userId), completedPlays: { $gt: 0 } })
-      .select('albumName artistName albumArt completedPlays lastCompletedAt')
+    const albumStatsDocs = await AlbumStats.find({ userId, albumPlayCount: { $gt: 0 } })
+      .select('albumName artistName albumArt albumPlayCount lastCompletedAt')
       .sort({ lastCompletedAt: -1 })
       .limit(50)
       .lean();
@@ -770,7 +1225,7 @@ router.get('/listening-stats', async (req: Request, res: Response) => {
       .sort((a,b) => a[0].localeCompare(b[0]))
       .map(([date, count]) => ({ date, count }));
 
-    const totalCompletedAlbumPlays = albumStatsDocs.reduce((sum, s: any) => sum + (s.completedPlays || 0), 0);
+    const totalCompletedAlbumPlays = albumStatsDocs.reduce((sum, s: any) => sum + (s.albumPlayCount || 0), 0);
     const last7DaysCompletions = dailyCompletionTrend.slice(-7).reduce((a,b)=>a+b.count,0);
 
     // Calculate current completion streak (consecutive days with at least 1 completion, ending today)
@@ -1136,3 +1591,5 @@ router.post('/sync-recent', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+

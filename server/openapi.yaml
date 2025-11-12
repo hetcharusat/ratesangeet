@@ -1,0 +1,1023 @@
+openapi: 3.0.3
+info:
+  title: Ratesangeet API
+  version: 0.1.0
+  description: |
+    REST API for the Ratesangeet app (Spotify Music Tracker).
+    All endpoints are namespaced under `/api/*`.
+tags:
+  - name: Auth
+    description: Authentication flows (OAuth, PKCE) and token refresh
+  - name: Spotify
+    description: Search, playback info, scrobbling and recent activity from Spotify
+  - name: Reviews
+    description: Create, list and react to reviews and comments
+  - name: User
+    description: Profiles, favorites and social graph endpoints
+  - name: Home
+    description: Snapshot and quick stats for the home screen
+  - name: Refresh
+    description: Cache invalidation and re-fetch utilities
+  - name: System
+    description: Health and uptime endpoints
+servers:
+  - url: http://localhost:5000
+    description: Local dev
+  - url: https://ratesangeet.onrender.com
+    description: Production
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Envelope:
+      type: object
+      description: Standard response envelope used during transitional migration phase. Legacy raw fields may still be duplicated outside `data` for backward compatibility. Clients should rely only on fields inside `data` and the `success` flag.
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          nullable: true
+        data:
+          type: object
+        cache:
+          $ref: '#/components/schemas/CacheMetadata'
+        refreshedToken:
+          type: string
+          nullable: true
+    CacheMetadata:
+      type: object
+      description: Metadata describing the cache characteristics of the payload.
+      properties:
+        source:
+          type: string
+          description: Where the data came from (spotify, database, cache, hybrid)
+        cachedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        isFresh:
+          type: boolean
+          description: Indicates the data was computed/obtained freshly (not a cache hit) in the current request cycle.
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Mongo ObjectId
+        spotifyId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        profileImage:
+          type: string
+        username:
+          type: string
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        spotifyId:
+          type: string
+        itemType:
+          type: string
+          enum: [track, album]
+        rating:
+          type: number
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Scrobble:
+      type: object
+      description: A listening event recorded after >=40% of a track was played. Idempotent per (userId, spotifyId, 10s-rounded playedAt) to avoid duplicates.
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        spotifyId:
+          type: string
+        trackName:
+          type: string
+        artistName:
+          type: string
+        albumId:
+          type: string
+          nullable: true
+        albumName:
+          type: string
+        albumArt:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+        playedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          example: spotify
+      example:
+        id: "64faabc1234567890fedcba0"
+        userId: "64faabc1234567890fedcba1"
+        spotifyId: "3n3Ppam7vgaVa1iaRUc9Lp"
+        trackName: "Dreams"
+        artistName: "Fleetwood Mac"
+        albumId: "2guirTSEqLizK7j9i1MTTZ"
+        albumName: "Rumours"
+        albumArt: "https://i.scdn.co/image/abc123def456"
+        durationMs: 257000
+        playedAt: "2025-11-11T12:34:10.000Z"
+        source: "spotify"
+    ListeningStats:
+      type: object
+      description: Aggregated listening statistics derived from a recent subset (fast mode) of scrobbles plus cached summaries.
+      properties:
+        totalMinutes:
+          type: integer
+          description: Sum of durationMs across included scrobbles divided by 60000.
+        totalScrobbles:
+          type: integer
+          description: Number of scrobbles considered in the stats window.
+        uniqueArtistsCount:
+          type: integer
+          nullable: true
+          description: Count of distinct artist names in the window (optional if not computed).
+        topAlbums:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Album name.
+              artist:
+                type: string
+                description: Primary artist for the album.
+              albumArt:
+                type: string
+                nullable: true
+                description: URL to representative album artwork (largest available image).
+              count:
+                type: integer
+                description: Total scrobble events for the album (may exceed unique tracks).
+              totalTracks:
+                type: integer
+                nullable: true
+                description: Number of unique tracks heard (heuristic) contributing to album ranking.
+              totalTimeMs:
+                type: integer
+                nullable: true
+                description: Accumulated play time for album scrobbles (future optional field).
+        topSingles:
+          type: array
+          items:
+            type: object
+        topGenres:
+          type: array
+          items:
+            type: object
+            properties:
+              genre:
+                type: string
+              count:
+                type: integer
+                description: Number of scrobbles associated with the genre.
+        topArtists:
+          type: array
+          items:
+            type: object
+            properties:
+              artist:
+                type: string
+              count:
+                type: integer
+                description: Number of scrobbles for the artist.
+        albumCompletions:
+          type: object
+          properties:
+            totalCompletedAlbums:
+              type: integer
+              description: Albums where all known tracks were scrobbled (100% completion).
+            totalCompletedAlbumPlays:
+              type: integer
+              description: Total scrobble events across completed albums.
+            recentCompletions:
+              type: array
+              items:
+                type: object
+                properties:
+                  albumName:
+                    type: string
+                  artistName:
+                    type: string
+                  albumArt:
+                    type: string
+                    nullable: true
+                  lastCompletedAt:
+                    type: string
+                    format: date-time
+                    description: Timestamp of the most recent track scrobble achieving completion.
+            dailyCompletionTrend:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:
+                    type: string
+                  count:
+                    type: integer
+                    description: Number of album completions on the given date.
+            last7DaysCompletions:
+              type: integer
+              description: Total album completions over the last 7 days.
+            currentStreak:
+              type: integer
+              description: Consecutive days with at least one album completion.
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          message:
+                            type: string
+  /api/auth/login:
+    get:
+      summary: Get Spotify authorize URL
+      tags:
+        - Auth
+      parameters:
+        - in: query
+          name: target
+          schema:
+            type: string
+            enum: [mobile, web]
+      responses:
+        '200':
+          description: Authorization URL
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+                          target:
+                            type: string
+                          redirectUri:
+                            type: string
+  /api/auth/callback:
+    post:
+      summary: OAuth callback exchange (Primary auth endpoint)
+      description: |
+        **Server-side OAuth token exchange and user creation/update.**
+        
+        This is the primary authentication endpoint. Client sends the authorization code
+        from Spotify, and the server handles all token exchange, user profile fetching,
+        and database operations.
+        
+        **Flow:**
+        1. Client redirects user to Spotify OAuth
+        2. Spotify redirects back with authorization code
+        3. Client sends code to this endpoint
+        4. Server exchanges code with Spotify for tokens
+        5. Server fetches user profile from Spotify
+        6. Server creates/updates user in MongoDB
+        7. Server returns tokens + user data
+        
+        **Supports two flows:**
+        - **PKCE (Mobile)**: Include `codeVerifier` parameter
+        - **Client Secret (Web Dev)**: Omit `codeVerifier`, server uses client secret
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - redirectUri
+              properties:
+                code:
+                  type: string
+                  description: Authorization code from Spotify OAuth redirect
+                  example: "AQC7vK9..."
+                redirectUri:
+                  type: string
+                  description: Redirect URI used in OAuth request (must match Spotify Dashboard)
+                  example: "http://127.0.0.1:8081"
+                codeVerifier:
+                  type: string
+                  description: PKCE code verifier (required for mobile, omit for web dev)
+                  example: "dBjftJeZ4CVP..."
+                target:
+                  type: string
+                  enum: [web, mobile]
+                  description: Platform type (helps with logging and debugging)
+                  example: "web"
+      responses:
+        '200':
+          description: Authentication successful - Returns access token, refresh token, and user data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken:
+                            type: string
+                            description: Spotify access token (valid ~1 hour)
+                          refreshToken:
+                            type: string
+                            description: Spotify refresh token (valid ~60 days)
+                          user:
+                            $ref: '#/components/schemas/User'
+              example:
+                success: true
+                data:
+                  accessToken: "BQDCs..."
+                  refreshToken: "AQBC..."
+                  user:
+                    id: "507f1f77bcf86cd799439011"
+                    spotifyId: "hetcharusat"
+                    displayName: "Het Charusat"
+                    email: "het@example.com"
+                    username: "hetcharusat"
+                    profileImage: "https://i.scdn.co/image/..."
+        '400':
+          description: Invalid request - Missing code, invalid redirect URI, or code expired
+        '401':
+          description: Spotify authentication failed - Invalid client credentials
+        '500':
+          description: Server error during token exchange or user creation
+  /api/auth/pkce-login:
+    post:
+      summary: PKCE login with access token (DEPRECATED - Use /auth/callback)
+      deprecated: true
+      description: |
+        **⚠️ DEPRECATED**: This endpoint is maintained for backward compatibility only.
+        
+        **Use `/api/auth/callback` instead** - It handles the complete OAuth flow server-side,
+        eliminating the need for client-side token exchange.
+        
+        This endpoint expects the client to have already exchanged the authorization code
+        for tokens with Spotify, which adds unnecessary complexity and potential failure points.
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accessToken:
+                  type: string
+                  description: Spotify access token (already exchanged by client)
+                refreshToken:
+                  type: string
+                  description: Spotify refresh token (already exchanged by client)
+      responses:
+        '200':
+          description: Tokens and user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken:
+                            type: string
+                          refreshToken:
+                            type: string
+                          user:
+                            $ref: '#/components/schemas/User'
+  /api/auth/refresh:
+    post:
+      summary: Refresh Spotify access token
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken:
+                            type: string
+                          refreshToken:
+                            type: string
+                            nullable: true
+  /api/music/scrobbles:
+    get:
+      summary: Get user scrobbles
+      tags:
+        - Spotify
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of scrobbles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scrobble'
+  /api/music/listening-stats:
+    get:
+      summary: Get listening stats
+      tags:
+        - Spotify
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: accessToken
+          schema:
+            type: string
+        - in: query
+          name: force
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Listening stats response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListeningStats'
+  /api/music/scrobble:
+    post:
+      summary: Scrobble currently playing track (>=40% rule)
+      tags:
+        - Spotify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accessToken, userId]
+              properties:
+                accessToken:
+                  type: string
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Scrobble result
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          scrobbled:
+                            type: boolean
+                          scrobble:
+                            $ref: '#/components/schemas/Scrobble'
+  /api/music/sync-recent:
+    post:
+      summary: Backfill scrobbles from Recently Played
+      tags:
+        - Spotify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accessToken, userId]
+              properties:
+                accessToken:
+                  type: string
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Sync summary
+  /api/reviews/user/{userId}:
+    get:
+      summary: Reviews by user
+      tags:
+        - Reviews
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of reviews
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          reviews:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Review'
+  /api/reviews:
+    post:
+      summary: Create a review
+      tags:
+        - Reviews
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Review'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          review:
+                            $ref: '#/components/schemas/Review'
+  /api/users/{id}:
+    get:
+      summary: Get user profile
+      tags:
+        - User
+      parameters:
+        - in: path
+          name: id
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+  /api/home/snapshot:
+    get:
+      summary: Aggregated home snapshot
+      tags:
+        - Home
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: force
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Snapshot payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  recentActivity:
+                    type: object
+                    properties:
+                      scrobbles:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Scrobble'
+                      count:
+                        type: integer
+                  stats:
+                    type: object
+                    properties:
+                      totalScrobbles:
+                        type: integer
+                      uniqueAlbums:
+                        type: integer
+                      uniqueTracks:
+                        type: integer
+                  topContent:
+                    type: object
+                    properties:
+                      albums:
+                        type: array
+                        items:
+                          type: object
+                      tracks:
+                        type: array
+                        items:
+                          type: object
+                  albumProgress:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    type: object
+                  cache:
+                    $ref: '#/components/schemas/CacheMetadata'
+  /api/home/quick-stats:
+    get:
+      summary: Ultra-fast micro stats
+      tags:
+        - Home
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Quick stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalScrobbles:
+                    type: integer
+                  uniqueAlbums:
+                    type: integer
+                  uniqueTracks:
+                    type: integer
+                  cache:
+                    $ref: '#/components/schemas/CacheMetadata'
+  /api/refresh/recent:
+    post:
+      summary: Force refresh recently played from Spotify
+      tags:
+        - Refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Recently played (fresh)
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  cache:
+                    $ref: '#/components/schemas/CacheMetadata'
+                  refreshedToken:
+                    type: string
+                    nullable: true
+  /api/refresh/stats:
+    post:
+      summary: Invalidate user stats caches
+      tags:
+        - Refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Invalidation message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  cache:
+                    $ref: '#/components/schemas/CacheMetadata'
+  /api/refresh/discover:
+    post:
+      summary: Invalidate discover cache
+      tags:
+        - Refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Invalidation message
+  /api/refresh/home:
+    post:
+      summary: Invalidate home snapshot cache
+      tags:
+        - Refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Invalidation message
+  /api/refresh/all:
+    post:
+      summary: Invalidate all caches for a user
+      tags:
+        - Refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+      responses:
+        '200':
+          description: Invalidation message
+  /api/refresh/cache-stats:
+    get:
+      summary: Cache stats for debugging
+      tags:
+        - Refresh
+      responses:
+        '200':
+          description: Cache stats
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/music/search:
+    get:
+      summary: Search Spotify (albums, tracks, artists)
+      tags:
+        - Spotify
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+            example: track,album
+        - in: query
+          name: userId
+          schema:
+            type: string
+          description: Preferred; enables token refresh and per-user caching
+        - in: query
+          name: accessToken
+          schema:
+            type: string
+          description: Anonymous fallback if userId not provided
+        - in: query
+          name: force
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Search results
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          albums:
+                            type: object
+                          tracks:
+                            type: object
+                          artists:
+                            type: object
+  /api/music/recently-played:
+    get:
+      summary: Recently played tracks
+      tags:
+        - Spotify
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: accessToken
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: force
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Recently played
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              type: object
+  /api/music/currently-playing:
+    get:
+      summary: Currently playing info
+      tags:
+        - Spotify
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+        - in: query
+          name: accessToken
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current playback state
+          headers:
+            X-API-Envelope:
+              schema:
+                type: string
+                example: transitional-v1
+              description: Current API envelope version
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          isPlaying:
+                            type: boolean
+                          track:
+                            type: object
+                          progressMs:
+                            type: integer
+                          timestamp:
+                            type: integer

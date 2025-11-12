@@ -53,5 +53,7 @@ reviewSchema.index({ userId: 1, createdAt: -1 });
 reviewSchema.index({ spotifyId: 1, userId: 1 });
 // Global public review feed index
 reviewSchema.index({ isPublic: 1, createdAt: -1 });
+// Trending (future): surface most liked public reviews quickly
+reviewSchema.index({ isPublic: 1, likes: -1, createdAt: -1 }, { name: 'public_trending_reviews' });
 
 export default mongoose.model<IReview>('Review', reviewSchema);

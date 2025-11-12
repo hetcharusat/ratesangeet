@@ -1,21 +1,24 @@
 import { Router, Request, Response } from 'express';
-import Review from '../models/Review.js';
-import ReviewComment from '../models/ReviewComment.js';
-import User from '../models/User.js';
+import { transitionalSuccess, error as respondError } from '../utils/response';
+import Review from '../models/Review';
+import ReviewComment from '../models/ReviewComment';
+import User from '../models/User';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
 // Create a new review
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { userId, itemType, spotifyId, itemName, artistName, albumArt, rating, reviewText, isPublic, listeningDate } = req.body;
+    const authUserId = String((req as any).authUser?._id || '');
+    const { itemType, spotifyId, itemName, artistName, albumArt, rating, reviewText, isPublic, listeningDate } = req.body;
 
-    if (!userId || !itemType || !spotifyId || !itemName || !artistName || !rating) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!authUserId || !itemType || !spotifyId || !itemName || !artistName || !rating) {
+      return respondError(res, 'Missing required fields', 400);
     }
 
     // Check if review already exists
-    const existingReview = await Review.findOne({ userId, spotifyId });
+  const existingReview = await Review.findOne({ userId: authUserId, spotifyId });
     
     if (existingReview) {
       // Update existing review
@@ -24,13 +27,13 @@ router.post('/', async (req: Request, res: Response) => {
       existingReview.isPublic = isPublic !== undefined ? isPublic : true;
       existingReview.listeningDate = listeningDate || new Date();
       existingReview.updatedAt = new Date();
-      await existingReview.save();
-      return res.json(existingReview);
+  await existingReview.save();
+  return transitionalSuccess(res, { review: existingReview });
     }
 
     // Create new review
     const review = new Review({
-      userId,
+      userId: authUserId,
       itemType,
       spotifyId,
       itemName,
@@ -42,11 +45,11 @@ router.post('/', async (req: Request, res: Response) => {
       listeningDate: listeningDate || new Date(),
     });
 
-    await review.save();
-    res.status(201).json(review);
+  await review.save();
+  return transitionalSuccess(res, { review }, { status: 201 });
   } catch (error: any) {
-    console.error('Error creating review:', error);
-    res.status(500).json({ error: 'Failed to create review' });
+  console.error('Error creating review:', error);
+  return respondError(res, 'Failed to create review', 500);
   }
 });
 
@@ -99,48 +102,59 @@ router.get('/:id', async (req: Request, res: Response) => {
   try {
     const review = await Review.findById(req.params.id);
     if (!review) {
-      return res.status(404).json({ error: 'Review not found' });
+      return respondError(res, 'Review not found', 404);
     }
-    res.json(review);
+    return transitionalSuccess(res, { review });
   } catch (error: any) {
-    console.error('Error fetching review:', error);
-    res.status(500).json({ error: 'Failed to fetch review' });
+  console.error('Error fetching review:', error);
+  return respondError(res, 'Failed to fetch review', 500);
   }
 });
 
 // Update a review
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { rating, reviewText } = req.body;
     const review = await Review.findById(req.params.id);
 
     if (!review) {
-      return res.status(404).json({ error: 'Review not found' });
+      return respondError(res, 'Review not found', 404);
+    }
+
+    // Only author can update
+    const authUserId = String((req as any).authUser?._id || '');
+    if (String(review.userId) !== authUserId) {
+      return respondError(res, 'Not allowed', 403);
     }
 
     if (rating) review.rating = rating;
     if (reviewText !== undefined) review.reviewText = reviewText;
     review.updatedAt = new Date();
 
-    await review.save();
-    res.json(review);
+  await review.save();
+  return transitionalSuccess(res, { review });
   } catch (error: any) {
-    console.error('Error updating review:', error);
-    res.status(500).json({ error: 'Failed to update review' });
+  console.error('Error updating review:', error);
+  return respondError(res, 'Failed to update review', 500);
   }
 });
 
 // Delete a review
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const review = await Review.findByIdAndDelete(req.params.id);
-    if (!review) {
-      return res.status(404).json({ error: 'Review not found' });
+    const review = await Review.findById(req.params.id);
+    if (!review) return respondError(res, 'Review not found', 404);
+
+    const authUserId = String((req as any).authUser?._id || '');
+    if (String(review.userId) !== authUserId) {
+      return respondError(res, 'Not allowed', 403);
     }
-    res.json({ message: 'Review deleted successfully' });
+
+    await review.deleteOne();
+    return transitionalSuccess(res, { message: 'Review deleted successfully' });
   } catch (error: any) {
-    console.error('Error deleting review:', error);
-    res.status(500).json({ error: 'Failed to delete review' });
+  console.error('Error deleting review:', error);
+  return respondError(res, 'Failed to delete review', 500);
   }
 });
 
@@ -155,23 +169,23 @@ router.get('/stats/:userId', async (req: Request, res: Response) => {
       { $group: { _id: null, avgRating: { $avg: '$rating' } } },
     ]);
 
-    res.json({
+    return transitionalSuccess(res, {
       totalReviews,
       averageRating: avgRating[0]?.avgRating || 0,
     });
   } catch (error: any) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({ error: 'Failed to fetch stats' });
+  console.error('Error fetching stats:', error);
+  return respondError(res, 'Failed to fetch stats', 500);
   }
 });
 
 // React to a review with limited emoji types
-router.post('/:id/react', async (req: Request, res: Response) => {
+router.post('/:id/react', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId, type } = req.body as { userId?: string; type?: string | null };
-
-    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const { type } = req.body as { type?: string | null };
+    const userId = String((req as any).authUser?._id || '');
+    if (!userId) return respondError(res, 'Authentication required', 401);
 
     // Support both emoji reactions and YouTube-style like/dislike
     const allowed: Record<string, string> = { 
@@ -183,11 +197,11 @@ router.post('/:id/react', async (req: Request, res: Response) => {
       none: ''  // For removing reactions
     };
     if (type && type !== 'none' && !allowed[type]) {
-      return res.status(400).json({ error: 'Invalid reaction type' });
+      return respondError(res, 'Invalid reaction type', 400);
     }
 
-    const review = await Review.findById(id);
-    if (!review) return res.status(404).json({ error: 'Review not found' });
+  const review = await Review.findById(id);
+  if (!review) return respondError(res, 'Review not found', 404);
 
     const current = (review.reactionsByUser as any)?.get?.(userId) as string | undefined;
 
@@ -233,16 +247,15 @@ router.post('/:id/react', async (req: Request, res: Response) => {
     }
     const userReaction = (review.reactionsByUser as any).get?.(userId) || null;
 
-    res.json({
-      success: true,
+    return transitionalSuccess(res, {
       reviewId: review._id,
       reactionsCount: countsObj,
       userReaction,
       likes: review.likes,
     });
   } catch (error: any) {
-    console.error('Error reacting to review:', error);
-    res.status(500).json({ error: 'Failed to update reaction' });
+  console.error('Error reacting to review:', error);
+  return respondError(res, 'Failed to update reaction', 500);
   }
 });
 
@@ -314,14 +327,13 @@ router.get('/:id/comments', async (req: Request, res: Response) => {
 });
 
 // Add a comment (or reply) to a review
-router.post('/:id/comments', async (req: Request, res: Response) => {
+router.post('/:id/comments', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId, text, parentId } = req.body as { userId?: string; text?: string; parentId?: string | null };
-
-    if (!userId || !text || !text.trim()) {
-      return res.status(400).json({ error: 'userId and text required' });
-    }
+    const { text, parentId } = req.body as { text?: string; parentId?: string | null };
+    const userId = String((req as any).authUser?._id || '');
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    if (!text || !text.trim()) return res.status(400).json({ error: 'text required' });
 
     // ensure review exists
     const review = await Review.findById(id);
@@ -351,11 +363,11 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
 });
 
 // Delete a comment (author-only)
-router.delete('/comments/:commentId', async (req: Request, res: Response) => {
+router.delete('/comments/:commentId', requireAuth, async (req: Request, res: Response) => {
   try {
     const { commentId } = req.params;
-    const { userId } = req.body as { userId?: string };
-    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const userId = String((req as any).authUser?._id || '');
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const comment = await ReviewComment.findById(commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });

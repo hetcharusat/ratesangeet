@@ -1,0 +1,602 @@
+openapi: 3.0.3
+info:
+  title: Ratesangeet API
+  version: 0.3.0
+  description: |
+    Comprehensive REST API for Ratesangeet (Spotify Music Tracker).
+    - Grouped paths: `/api/user`, `/api/spotify`, `/api/reviews`, `/api/stats`
+    - Legacy paths maintained for backward compatibility
+    - New endpoints return `{ success, data }` envelope
+servers:
+  - url: http://localhost:5000
+    description: Local development
+  - url: https://ratesangeet.onrender.com
+    description: Production
+tags:
+  - name: Auth
+    description: Authentication, tokens, user search
+  - name: Spotify
+    description: Search, artist, album, playback, scrobbling
+  - name: Reviews
+    description: Reviews, reactions, comments
+  - name: User
+    description: Profiles, social graph, activity
+  - name: Stats
+    description: Listening stats, completions, summaries
+components:
+  schemas:
+    ApiSuccess:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          description: Response payload varies by endpoint
+    ApiError:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: 'Resource not found'
+        details:
+          type: object
+          nullable: true
+    User:
+      type: object
+      properties:
+        id: { type: string, example: '64a1b2c3d4e5f6g7h8i9j0k1' }
+        spotifyId: { type: string, example: '12345abc' }
+        displayName: { type: string, example: 'John Doe' }
+        email: { type: string, example: 'user@example.com' }
+        profileImage: { type: string, nullable: true, example: 'https://i.scdn.co/image/...' }
+        username: { type: string, example: 'johndoe' }
+    Review:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        spotifyId: { type: string }
+        itemType: { type: string, enum: [track, album] }
+        itemName: { type: string, example: 'Rumours' }
+        artistName: { type: string, example: 'Fleetwood Mac' }
+        albumArt: { type: string, nullable: true }
+        rating: { type: number, example: 9 }
+        reviewText: { type: string, nullable: true }
+        isPublic: { type: boolean }
+        likes: { type: number, example: 12 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Scrobble:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        spotifyId: { type: string }
+        trackName: { type: string, example: 'Go Your Own Way' }
+        artistName: { type: string, example: 'Fleetwood Mac' }
+        albumId: { type: string, nullable: true }
+        albumName: { type: string, example: 'Rumours' }
+        albumArt: { type: string, nullable: true }
+        durationMs: { type: integer, example: 217000 }
+        playedAt: { type: string, format: date-time }
+        source: { type: string, example: 'spotify' }
+paths:
+  /api/auth/login:
+    get:
+      tags: [Auth]
+      summary: Get Spotify authorize URL
+      description: Returns OAuth URL for user to authenticate with Spotify
+      parameters:
+        - in: query
+          name: target
+          schema: { type: string, enum: [mobile, web] }
+          description: Platform identifier to choose redirect URI
+      responses:
+        '200':
+          description: Authorization URL and config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, example: 'https://accounts.spotify.com/authorize?client_id=...' }
+                  target: { type: string, example: 'mobile' }
+                  redirectUri: { type: string, example: 'com.ratesangeet://callback' }
+  /api/auth/callback:
+    post:
+      tags: [Auth]
+      summary: Exchange authorization code for tokens
+      description: Server-side or PKCE flow; returns tokens and user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: 'Authorization code from Spotify' }
+                redirectUri: { type: string, description: 'Must match registered redirect URI' }
+                codeVerifier: { type: string, description: 'PKCE code verifier (for public clients)' }
+                target: { type: string, enum: [mobile, web] }
+            example:
+              code: 'AQB1_...'
+              redirectUri: 'com.ratesangeet://callback'
+              codeVerifier: 'abc123...'
+              target: 'mobile'
+      responses:
+        '200':
+          description: Tokens and user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Invalid code or redirect URI mismatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+  /api/auth/pkce-login:
+    post:
+      tags: [Auth]
+      summary: PKCE login with access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accessToken: { type: string }
+                refreshToken: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh Spotify access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/search:
+    get:
+      tags: [Spotify]
+      summary: Search tracks and albums
+      parameters:
+        - in: query
+          name: accessToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/artist:
+    get:
+      tags: [Spotify]
+      summary: Fetch artist profile, top tracks, discography
+      parameters:
+        - in: query
+          name: accessToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: artistId
+          schema: { type: string }
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/album:
+    get:
+      tags: [Spotify]
+      summary: Album details and track list
+      parameters:
+        - in: query
+          name: accessToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: albumId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/currently-playing:
+    get:
+      tags: [Spotify]
+      summary: Current playback
+      parameters:
+        - in: query
+          name: accessToken
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/scrobble:
+    post:
+      tags: [Spotify]
+      summary: Scrobble current track (>=40%)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accessToken: { type: string }
+                userId: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/sync-recent:
+    post:
+      tags: [Spotify]
+      summary: Backfill scrobbles from Recently Played
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accessToken: { type: string }
+                userId: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/music/listening-stats:
+    get:
+      tags: [Stats]
+      summary: Aggregated listening stats (cached)
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: accessToken
+          schema: { type: string }
+        - in: query
+          name: force
+          schema: { type: boolean }
+      responses:
+        '200': { description: OK }
+  /api/reviews:
+    post:
+      tags: [Reviews]
+      summary: Create or update review
+      description: Upserts a review for a track or album
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, itemType, spotifyId, itemName, artistName, rating]
+              properties:
+                userId: { type: string }
+                itemType: { type: string, enum: [track, album] }
+                spotifyId: { type: string }
+                itemName: { type: string }
+                artistName: { type: string }
+                albumArt: { type: string, nullable: true }
+                rating: { type: number, minimum: 1, maximum: 10 }
+                reviewText: { type: string, nullable: true }
+                isPublic: { type: boolean }
+                listeningDate: { type: string, format: date-time }
+            example:
+              userId: '64a1b2c3d4e5f6g7h8i9j0k1'
+              itemType: 'album'
+              spotifyId: '2guirTSEqLizK7j9i1MTTZ'
+              itemName: 'Rumours'
+              artistName: 'Fleetwood Mac'
+              rating: 9
+              reviewText: 'Timeless classic.'
+      responses:
+        '200':
+          description: Review updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+        '201':
+          description: Review created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/reviews/public:
+    get:
+      tags: [Reviews]
+      summary: Get public reviews feed
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: skip
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: List of public reviews
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/reviews/user/{userId}:
+    get:
+      tags: [Reviews]
+      summary: Get reviews by user
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: User's reviews
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Review' }
+  /api/reviews/{id}:
+    get:
+      tags: [Reviews]
+      summary: Get review by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Review details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+    put:
+      tags: [Reviews]
+      summary: Update review
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating: { type: number }
+                reviewText: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+    delete:
+      tags: [Reviews]
+      summary: Delete review
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/reviews/{id}/react:
+    post:
+      tags: [Reviews]
+      summary: React to review
+      description: Add/remove emoji reaction (like, love, fire, sad, dislike)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string }
+                type: { type: string, enum: [like, dislike, love, fire, sad, none] }
+            example:
+              userId: '64a1b2c3d4e5f6g7h8i9j0k1'
+              type: 'love'
+      responses:
+        '200':
+          description: Reaction updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/reviews/{id}/comments:
+    get:
+      tags: [Reviews]
+      summary: Get review comments
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of comments
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+    post:
+      tags: [Reviews]
+      summary: Add comment to review
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, text]
+              properties:
+                userId: { type: string }
+                text: { type: string }
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/users/{id}:
+    get:
+      tags: [User]
+      summary: Get user profile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/User' }
+  /api/users/{id}/feed:
+    get:
+      tags: [User]
+      summary: Get user's social feed
+      description: Reviews from followed users
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Feed items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/users/{id}/followers:
+    get:
+      tags: [User]
+      summary: Get user followers
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of followers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/users/{id}/following:
+    get:
+      tags: [User]
+      summary: Get users followed by user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of followed users
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/users/{id}/follow:
+    post:
+      tags: [User]
+      summary: Follow a user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [followerId]
+              properties:
+                followerId: { type: string, description: 'User performing the follow' }
+      responses:
+        '200':
+          description: Followed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }
+  /api/users/{id}/unfollow:
+    post:
+      tags: [User]
+      summary: Unfollow a user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [followerId]
+              properties:
+                followerId: { type: string }
+      responses:
+        '200':
+          description: Unfollowed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSuccess' }

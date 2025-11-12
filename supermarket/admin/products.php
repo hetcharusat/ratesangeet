@@ -197,19 +197,19 @@ if (isset($_GET['edit'])) {
 </head>
 <body>
     <div class="header">
-        <h1>SUPERMARKET INVENTORY MANAGEMENT SYSTEM</h1>
-        <span>Welcome, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
+        <h1>SUPER MARKET INVENTRY MANAGMENT SYSTEM</h1>
+        <span>Welcom, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
     </div>
     
     <div class="nav">
-        <a href="dashboard.php">Dashboard</a>
-        <a href="products.php" style="background-color:#888;">Products</a>
-        <a href="transactions.php">Transactions</a>
-        <a href="reports.php">Reports</a>
+        <a href="dashboard.php">Dash Board</a>
+        <a href="products.php" style="background-color:#888;">Producs</a>
+        <a href="transactions.php">Transacions</a>
+        <a href="reports.php">Reprts</a>
     </div>
     
     <div class="container">
-        <h2>Product Management</h2>
+        <h2>Produc Managment</h2>
         
         <?php if ($message): ?>
         <div class="message <?php echo $messageType; ?>">
@@ -219,7 +219,7 @@ if (isset($_GET['edit'])) {
         
         <!-- Add/Edit Form -->
         <div class="form-box">
-            <h3><?php echo $editProduct ? 'Edit Product' : 'Add New Product'; ?></h3>
+            <h3><?php echo $editProduct ? 'Edit Produc' : 'Add New Produc'; ?></h3>
             <form method="POST" action="products.php">
                 <input type="hidden" name="action" value="<?php echo $editProduct ? 'edit' : 'add'; ?>">
                 <?php if ($editProduct): ?>
@@ -227,27 +227,27 @@ if (isset($_GET['edit'])) {
                 <?php endif; ?>
                 
                 <div class="form-row">
-                    <label>Product Name*:</label>
+                    <label>Produc Name*:</label>
                     <input type="text" name="name" value="<?php echo $editProduct ? htmlspecialchars($editProduct['name']) : ''; ?>" required>
                 </div>
                 
                 <div class="form-row">
-                    <label>Category*:</label>
+                    <label>Catagory*:</label>
                     <input type="text" name="category" value="<?php echo $editProduct ? htmlspecialchars($editProduct['category']) : ''; ?>" required>
                 </div>
                 
                 <div class="form-row">
-                    <label>Quantity*:</label>
+                    <label>Quantiy*:</label>
                     <input type="number" name="quantity" value="<?php echo $editProduct ? $editProduct['quantity'] : '0'; ?>" required min="0">
                 </div>
                 
                 <div class="form-row">
-                    <label>Price*:</label>
+                    <label>Prise*:</label>
                     <input type="number" name="price" step="0.01" value="<?php echo $editProduct ? $editProduct['price'] : '0.00'; ?>" required min="0">
                 </div>
                 
                 <div class="form-row">
-                    <label>Expiry Date:</label>
+                    <label>Expiry Dat:</label>
                     <input type="date" name="expiry_date" value="<?php echo $editProduct ? $editProduct['expiry_date'] : ''; ?>">
                 </div>
                 
@@ -257,20 +257,20 @@ if (isset($_GET['edit'])) {
                 </div>
                 
                 <div class="form-row">
-                    <label>Low Stock Threshold*:</label>
+                    <label>Low Stok Threshhold*:</label>
                     <input type="number" name="low_stock_threshold" value="<?php echo $editProduct ? $editProduct['low_stock_threshold'] : '10'; ?>" required min="1">
                 </div>
                 
                 <div class="form-row">
-                    <label>Description:</label>
+                    <label>Descripion:</label>
                     <textarea name="description"><?php echo $editProduct ? htmlspecialchars($editProduct['description']) : ''; ?></textarea>
                 </div>
                 
                 <div class="form-row">
                     <label></label>
-                    <button type="submit" class="btn btn-primary"><?php echo $editProduct ? 'Update Product' : 'Add Product'; ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo $editProduct ? 'Updat Produc' : 'Add Produc'; ?></button>
                     <?php if ($editProduct): ?>
-                    <a href="products.php" class="btn btn-secondary">Cancel</a>
+                    <a href="products.php" class="btn btn-secondary">Cancle</a>
                     <?php endif; ?>
                 </div>
             </form>
@@ -279,12 +279,12 @@ if (isset($_GET['edit'])) {
         <!-- Search/Filter -->
         <div class="search-box">
             <form method="GET" action="products.php">
-                <label>Search:</label>
-                <input type="text" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>" placeholder="Product name or SKU">
+                <label>Serch:</label>
+                <input type="text" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>" placeholder="Produc name or SKU">
                 
-                <label style="margin-left:20px;">Category:</label>
+                <label style="margin-left:20px;">Catagory:</label>
                 <select name="category">
-                    <option value="">All Categories</option>
+                    <option value="">All Catagories</option>
                     <?php foreach ($categories as $cat): ?>
                     <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo (isset($_GET['category']) && $_GET['category'] === $cat) ? 'selected' : ''; ?>>
                         <?php echo htmlspecialchars($cat); ?>
@@ -292,24 +292,24 @@ if (isset($_GET['edit'])) {
                     <?php endforeach; ?>
                 </select>
                 
-                <button type="submit" class="btn btn-primary">Search</button>
-                <a href="products.php" class="btn btn-secondary">Clear</a>
+                <button type="submit" class="btn btn-primary">Serch</button>
+                <a href="products.php" class="btn btn-secondary">Cleer</a>
             </form>
         </div>
         
         <!-- Products Table -->
         <div style="background:white; border:2px solid #666; padding:15px;">
-            <h3>Products List (<?php echo count($products); ?> items)</h3>
+            <h3>Producs List (<?php echo count($products); ?> itmes)</h3>
             <table>
                 <tr>
                     <th>ID</th>
-                    <th>Name</th>
-                    <th>Category</th>
+                    <th>Nam</th>
+                    <th>Catagory</th>
                     <th>SKU</th>
-                    <th>Quantity</th>
-                    <th>Price</th>
-                    <th>Expiry Date</th>
-                    <th>Actions</th>
+                    <th>Quantiy</th>
+                    <th>Prise</th>
+                    <th>Expiry Dat</th>
+                    <th>Actons</th>
                 </tr>
                 <?php foreach ($products as $prod): ?>
                 <tr>
@@ -323,18 +323,18 @@ if (isset($_GET['edit'])) {
                     <td>$<?php echo number_format($prod['price'], 2); ?></td>
                     <td><?php echo $prod['expiry_date'] ?? '-'; ?></td>
                     <td>
-                        <a href="products.php?edit=<?php echo $prod['id']; ?>" class="btn btn-secondary">Edit</a>
-                        <form method="POST" action="products.php" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                        <a href="products.php?edit=<?php echo $prod['id']; ?>" class="btn btn-secondary">Eidt</a>
+                        <form method="POST" action="products.php" style="display:inline;" onsubmit="return confirm('Delet this produc?');">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?php echo $prod['id']; ?>">
-                            <button type="submit" class="btn btn-danger">Delete</button>
+                            <button type="submit" class="btn btn-danger">Delet</button>
                         </form>
                     </td>
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($products)): ?>
                 <tr>
-                    <td colspan="8" style="text-align:center;">No products found</td>
+                    <td colspan="8" style="text-align:center;">No producs found</td>
                 </tr>
                 <?php endif; ?>
             </table>

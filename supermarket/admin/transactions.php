@@ -188,19 +188,19 @@ $allProducts = $product->getAll(array(), 1, 1000);
 </head>
 <body>
     <div class="header">
-        <h1>SUPERMARKET INVENTORY MANAGEMENT SYSTEM</h1>
-        <span>Welcome, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
+        <h1>SUPER MARKET INVENTRY MANAGMENT SYSTEM</h1>
+        <span>Welcom, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
     </div>
     
     <div class="nav">
-        <a href="dashboard.php">Dashboard</a>
-        <a href="products.php">Products</a>
-        <a href="transactions.php" style="background-color:#888;">Transactions</a>
-        <a href="reports.php">Reports</a>
+        <a href="dashboard.php">Dash Board</a>
+        <a href="products.php">Producs</a>
+        <a href="transactions.php" style="background-color:#888;">Transacions</a>
+        <a href="reports.php">Reprts</a>
     </div>
     
     <div class="container">
-        <h2>Transaction Management</h2>
+        <h2>Transacion Managment</h2>
         
         <?php if ($message): ?>
         <div class="message <?php echo $messageType; ?>">
@@ -210,54 +210,54 @@ $allProducts = $product->getAll(array(), 1, 1000);
         
         <!-- Add Transaction Form -->
         <div class="form-box">
-            <h3>Add New Transaction</h3>
+            <h3>Add New Transacion</h3>
             <form method="POST" action="transactions.php">
                 <input type="hidden" name="action" value="add">
                 
                 <div class="form-row">
-                    <label>Product*:</label>
+                    <label>Produc*:</label>
                     <select name="product_id" required>
-                        <option value="">Select Product</option>
+                        <option value="">Selct Produc</option>
                         <?php foreach ($allProducts as $prod): ?>
                         <option value="<?php echo $prod['id']; ?>">
-                            <?php echo htmlspecialchars($prod['name']); ?> (Stock: <?php echo $prod['quantity']; ?>)
+                            <?php echo htmlspecialchars($prod['name']); ?> (Stok: <?php echo $prod['quantity']; ?>)
                         </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 
                 <div class="form-row">
-                    <label>Type*:</label>
+                    <label>Typ*:</label>
                     <select name="type" required>
-                        <option value="purchase">Purchase (Add Stock)</option>
-                        <option value="sale">Sale (Remove Stock)</option>
-                        <option value="adjustment">Adjustment</option>
+                        <option value="purchase">Purchas (Add Stok)</option>
+                        <option value="sale">Sal (Remove Stok)</option>
+                        <option value="adjustment">Adjusment</option>
                     </select>
                 </div>
                 
                 <div class="form-row">
-                    <label>Quantity*:</label>
+                    <label>Quantiy*:</label>
                     <input type="number" name="qty" required min="1">
                 </div>
                 
                 <div class="form-row">
-                    <label>Price Per Unit:</label>
-                    <input type="number" name="price_per_unit" step="0.01" placeholder="Leave blank to use product price">
+                    <label>Prise Per Unit:</label>
+                    <input type="number" name="price_per_unit" step="0.01" placeholder="Leav blank to use produc prise">
                 </div>
                 
                 <div class="form-row">
-                    <label>Reference Number:</label>
+                    <label>Refrence Number:</label>
                     <input type="text" name="reference_number" placeholder="e.g., PO-001, SALE-001">
                 </div>
                 
                 <div class="form-row">
-                    <label>Notes:</label>
+                    <label>Nots:</label>
                     <textarea name="notes" style="width:400px; height:60px;"></textarea>
                 </div>
                 
                 <div class="form-row">
                     <label></label>
-                    <button type="submit" class="btn btn-primary">Add Transaction</button>
+                    <button type="submit" class="btn btn-primary">Add Transacion</button>
                 </div>
             </form>
         </div>
@@ -265,17 +265,17 @@ $allProducts = $product->getAll(array(), 1, 1000);
         <!-- Search/Filter -->
         <div class="search-box">
             <form method="GET" action="transactions.php">
-                <label>Type:</label>
+                <label>Typ:</label>
                 <select name="type">
-                    <option value="">All Types</option>
-                    <option value="purchase" <?php echo (isset($_GET['type']) && $_GET['type'] === 'purchase') ? 'selected' : ''; ?>>Purchase</option>
-                    <option value="sale" <?php echo (isset($_GET['type']) && $_GET['type'] === 'sale') ? 'selected' : ''; ?>>Sale</option>
-                    <option value="adjustment" <?php echo (isset($_GET['type']) && $_GET['type'] === 'adjustment') ? 'selected' : ''; ?>>Adjustment</option>
+                    <option value="">All Typs</option>
+                    <option value="purchase" <?php echo (isset($_GET['type']) && $_GET['type'] === 'purchase') ? 'selected' : ''; ?>>Purchas</option>
+                    <option value="sale" <?php echo (isset($_GET['type']) && $_GET['type'] === 'sale') ? 'selected' : ''; ?>>Sal</option>
+                    <option value="adjustment" <?php echo (isset($_GET['type']) && $_GET['type'] === 'adjustment') ? 'selected' : ''; ?>>Adjusment</option>
                 </select>
                 
-                <label style="margin-left:20px;">Product:</label>
+                <label style="margin-left:20px;">Produc:</label>
                 <select name="product_id">
-                    <option value="">All Products</option>
+                    <option value="">All Producs</option>
                     <?php foreach ($allProducts as $prod): ?>
                     <option value="<?php echo $prod['id']; ?>" <?php echo (isset($_GET['product_id']) && $_GET['product_id'] == $prod['id']) ? 'selected' : ''; ?>>
                         <?php echo htmlspecialchars($prod['name']); ?>
@@ -284,32 +284,32 @@ $allProducts = $product->getAll(array(), 1, 1000);
                 </select>
                 
                 <br><br>
-                <label>Date From:</label>
+                <label>Dat From:</label>
                 <input type="date" name="date_from" value="<?php echo isset($_GET['date_from']) ? $_GET['date_from'] : ''; ?>" style="width:150px;">
                 
-                <label style="margin-left:20px;">Date To:</label>
+                <label style="margin-left:20px;">Dat To:</label>
                 <input type="date" name="date_to" value="<?php echo isset($_GET['date_to']) ? $_GET['date_to'] : ''; ?>" style="width:150px;">
                 
-                <button type="submit" class="btn btn-primary">Filter</button>
-                <a href="transactions.php" class="btn btn-secondary">Clear</a>
+                <button type="submit" class="btn btn-primary">Filtr</button>
+                <a href="transactions.php" class="btn btn-secondary">Cleer</a>
             </form>
         </div>
         
         <!-- Transactions Table -->
         <div style="background:white; border:2px solid #666; padding:15px;">
-            <h3>Transactions History (<?php echo count($transactions); ?> records)</h3>
+            <h3>Transacions Histroy (<?php echo count($transactions); ?> recods)</h3>
             <table>
                 <tr>
                     <th>ID</th>
-                    <th>Date</th>
-                    <th>Product</th>
-                    <th>Type</th>
-                    <th>Quantity</th>
-                    <th>Price/Unit</th>
-                    <th>Total Amount</th>
-                    <th>Reference</th>
+                    <th>Dat</th>
+                    <th>Produc</th>
+                    <th>Typ</th>
+                    <th>Quantiy</th>
+                    <th>Prise/Unit</th>
+                    <th>Totel Amout</th>
+                    <th>Refrence</th>
                     <th>By</th>
-                    <th>Actions</th>
+                    <th>Actons</th>
                 </tr>
                 <?php foreach ($transactions as $trans): ?>
                 <tr>
@@ -325,17 +325,17 @@ $allProducts = $product->getAll(array(), 1, 1000);
                     <td><?php echo htmlspecialchars($trans['reference_number']); ?></td>
                     <td><?php echo htmlspecialchars($trans['performed_by']); ?></td>
                     <td>
-                        <form method="POST" action="transactions.php" style="display:inline;" onsubmit="return confirm('Delete and reverse this transaction?');">
+                        <form method="POST" action="transactions.php" style="display:inline;" onsubmit="return confirm('Delet and revers this transacion?');">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?php echo $trans['id']; ?>">
-                            <button type="submit" class="btn btn-danger">Delete</button>
+                            <button type="submit" class="btn btn-danger">Delet</button>
                         </form>
                     </td>
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($transactions)): ?>
                 <tr>
-                    <td colspan="10" style="text-align:center;">No transactions found</td>
+                    <td colspan="10" style="text-align:center;">No transacions found</td>
                 </tr>
                 <?php endif; ?>
             </table>

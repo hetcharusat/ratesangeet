@@ -125,29 +125,29 @@ $transactionSummary = $transaction->getSummary();
 </head>
 <body>
     <div class="header">
-        <h1>SUPERMARKET INVENTORY MANAGEMENT SYSTEM</h1>
-        <span>Welcome, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
+        <h1>SUPER MARKET INVENTRY MANAGMENT SYSTEM</h1>
+        <span>Welcom, <?php echo htmlspecialchars($_SESSION['username']); ?> | <a href="logout.php" style="color:white;">Logout</a></span>
     </div>
     
     <div class="nav">
-        <a href="dashboard.php">Dashboard</a>
-        <a href="products.php">Products</a>
-        <a href="transactions.php">Transactions</a>
-        <a href="reports.php">Reports</a>
+        <a href="dashboard.php">Dash Board</a>
+        <a href="products.php">Producs</a>
+        <a href="transactions.php">Transacions</a>
+        <a href="reports.php">Reprts</a>
     </div>
     
     <div class="container">
-        <h2>Dashboard</h2>
+        <h2>Dash Board</h2>
         
         <!-- Cookie Alert -->
         <?php if ($alertCount > 0): ?>
         <div class="alert-box">
-            <h3>⚠ ALERTS (<?php echo $alertCount; ?>)</h3>
+            <h3>⚠ ALARTS (<?php echo $alertCount; ?>)</h3>
             <?php if (count($lowStockProducts) > 0): ?>
-                <p><strong>Low Stock Products:</strong> <?php echo count($lowStockProducts); ?> items</p>
+                <p><strong>Low Stok Products:</strong> <?php echo count($lowStockProducts); ?> itmes</p>
             <?php endif; ?>
             <?php if (count($expiringProducts) > 0): ?>
-                <p><strong>Expiring Soon:</strong> <?php echo count($expiringProducts); ?> items</p>
+                <p><strong>Expireing Soon:</strong> <?php echo count($expiringProducts); ?> itmes</p>
             <?php endif; ?>
         </div>
         <?php endif; ?>
@@ -155,19 +155,19 @@ $transactionSummary = $transaction->getSummary();
         <!-- Statistics -->
         <div class="stats">
             <div class="stat-box">
-                <h3>Total Products</h3>
+                <h3>Totel Products</h3>
                 <div class="number"><?php echo $totalProducts; ?></div>
             </div>
             <div class="stat-box">
-                <h3>Total Stock</h3>
+                <h3>Totel Stok</h3>
                 <div class="number"><?php echo $totalStock; ?></div>
             </div>
             <div class="stat-box">
-                <h3>Low Stock</h3>
+                <h3>Low Stok</h3>
                 <div class="number" style="color: red;"><?php echo count($lowStockProducts); ?></div>
             </div>
             <div class="stat-box">
-                <h3>Expiring Soon</h3>
+                <h3>Expireing Soon</h3>
                 <div class="number" style="color: orange;"><?php echo count($expiringProducts); ?></div>
             </div>
         </div>
@@ -175,14 +175,14 @@ $transactionSummary = $transaction->getSummary();
         <!-- Low Stock Products -->
         <?php if (count($lowStockProducts) > 0): ?>
         <div class="section">
-            <h2>Low Stock Products</h2>
+            <h2>Low Stok Producs</h2>
             <table>
                 <tr>
-                    <th>Product Name</th>
-                    <th>Category</th>
-                    <th>Current Stock</th>
-                    <th>Threshold</th>
-                    <th>Price</th>
+                    <th>Produc Name</th>
+                    <th>Catagory</th>
+                    <th>Curent Stok</th>
+                    <th>Threshhold</th>
+                    <th>Prise</th>
                 </tr>
                 <?php foreach ($lowStockProducts as $prod): ?>
                 <tr>
@@ -200,14 +200,14 @@ $transactionSummary = $transaction->getSummary();
         <!-- Expiring Products -->
         <?php if (count($expiringProducts) > 0): ?>
         <div class="section">
-            <h2>Products Expiring Soon</h2>
+            <h2>Producs Expireing Soon</h2>
             <table>
                 <tr>
-                    <th>Product Name</th>
-                    <th>Category</th>
-                    <th>Stock</th>
-                    <th>Expiry Date</th>
-                    <th>Days Left</th>
+                    <th>Produc Name</th>
+                    <th>Catagory</th>
+                    <th>Stok</th>
+                    <th>Expiry Dat</th>
+                    <th>Days Laft</th>
                 </tr>
                 <?php foreach ($expiringProducts as $prod): ?>
                 <?php 
@@ -228,14 +228,14 @@ $transactionSummary = $transaction->getSummary();
         
         <!-- Recent Transactions -->
         <div class="section">
-            <h2>Recent Transactions</h2>
+            <h2>Resent Transacions</h2>
             <table>
                 <tr>
-                    <th>Date</th>
-                    <th>Product</th>
-                    <th>Type</th>
-                    <th>Quantity</th>
-                    <th>Amount</th>
+                    <th>Dat</th>
+                    <th>Produc</th>
+                    <th>Typ</th>
+                    <th>Quantiy</th>
+                    <th>Amout</th>
                 </tr>
                 <?php foreach ($recentTransactions as $trans): ?>
                 <tr>
@@ -251,13 +251,13 @@ $transactionSummary = $transaction->getSummary();
         
         <!-- Transaction Summary -->
         <div class="section">
-            <h2>Transaction Summary</h2>
+            <h2>Transacion Summery</h2>
             <table>
                 <tr>
-                    <th>Type</th>
-                    <th>Count</th>
-                    <th>Total Quantity</th>
-                    <th>Total Amount</th>
+                    <th>Typ</th>
+                    <th>Cont</th>
+                    <th>Totel Quantiy</th>
+                    <th>Totel Amout</th>
                 </tr>
                 <?php foreach ($transactionSummary as $summary): ?>
                 <tr>

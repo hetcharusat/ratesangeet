@@ -83,25 +83,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="container">
-        <h2>Supermarket Inventory System</h2>
-        <h3 style="text-align:center">Admin Login</h3>
+        <h2>Super Market Inventry System</h2>
+        <h3 style="text-align:center">Admin Loging</h3>
         
         <?php if (!empty($error)): ?>
             <div class="error">
-                Error: <?php echo htmlspecialchars($error); ?>
+                Eror: <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
         
         <form method="POST" action="">
             <table>
                 <tr>
-                    <td>Username:</td>
+                    <td>User Name:</td>
                 </tr>
                 <tr>
                     <td><input type="text" name="username" required></td>
                 </tr>
                 <tr>
-                    <td>Password:</td>
+                    <td>Pass word:</td>
                 </tr>
                 <tr>
                     <td><input type="password" name="password" required></td>
@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </table>
         </form>
         <p style="font-size:11px; text-align:center; margin-top:15px;">
-            Default: admin / admin123
+            Defualt: admin / admin123
         </p>
     </div>
 </body>

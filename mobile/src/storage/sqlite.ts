@@ -1,7 +1,17 @@
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 
 type DB = any; // typed as any to avoid dependency on expo-sqlite type declarations at build time
 let db: DB | null = null;
+
+// Conditionally import SQLite only on native platforms
+let SQLite: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    SQLite = require('expo-sqlite');
+  } catch (e) {
+    console.warn('[SQLite] expo-sqlite not available on this platform');
+  }
+}
 
 export type LocalScrobble = {
   spotifyId: string;
@@ -14,16 +24,20 @@ export type LocalScrobble = {
   playedAt: number; // ms epoch
 };
 
-const ensureDb = (): DB => {
+const ensureDb = (): DB | null => {
+  if (Platform.OS === 'web' || !SQLite) {
+    return null;
+  }
   if (!db) {
     // Use synchronous API for simplicity; Expo SDK 54 supports it.
     db = SQLite.openDatabaseSync('scrobbles.db');
   }
-  return db!;
+  return db;
 };
 
 export const initLocalDb = () => {
   const d = ensureDb();
+  if (!d) return;
   d.execSync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS meta (
@@ -48,11 +62,13 @@ export const initLocalDb = () => {
 
 export const setMeta = (key: string, value: string) => {
   const d = ensureDb();
+  if (!d) return;
   d.runSync('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, value]);
 };
 
 export const getMeta = (key: string): string | null => {
   const d = ensureDb();
+  if (!d) return null;
   const row = d.getFirstSync('SELECT value FROM meta WHERE key=?', [key]) as any;
   return row && typeof row.value !== 'undefined' ? String(row.value) : null;
 };
@@ -60,6 +76,7 @@ export const getMeta = (key: string): string | null => {
 export const saveScrobbles = (items: LocalScrobble[]) => {
   if (!items?.length) return 0;
   const d = ensureDb();
+  if (!d) return 0;
   d.withTransactionSync(() => {
     const stmt = d.prepareSync(
       'INSERT INTO scrobbles(spotifyId, trackName, artistName, albumId, albumName, albumArt, durationMs, playedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -86,6 +103,7 @@ export const saveScrobbles = (items: LocalScrobble[]) => {
 
 export const getRecentScrobbles = (limit: number = 100): LocalScrobble[] => {
   const d = ensureDb();
+  if (!d) return [];
   const rows = d.getAllSync(
     'SELECT spotifyId, trackName, artistName, albumId, albumName, albumArt, durationMs, playedAt FROM scrobbles ORDER BY playedAt DESC LIMIT ?',
     [limit]
@@ -104,6 +122,7 @@ export type AlbumAggregate = {
 
 export const getAlbumAggregatesSince = (sinceMs?: number): AlbumAggregate[] => {
   const d = ensureDb();
+  if (!d) return [];
   const rows = d.getAllSync(
     `SELECT 
         COALESCE(albumId, albumName, '') as albumId,
@@ -134,6 +153,7 @@ export type TrackAggregate = {
 
 export const getTrackAggregatesSince = (sinceMs?: number): TrackAggregate[] => {
   const d = ensureDb();
+  if (!d) return [];
   const rows = d.getAllSync(
     `SELECT 
         MAX(spotifyId) as trackId,

@@ -6,28 +6,56 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import os from 'os';
 import http from 'http';
-import authRoutes from './routes/auth.js';
-import musicRoutes from './routes/music.js';
-import reviewRoutes from './routes/reviews.js';
-import statsRoutes from './routes/stats.js';
-import usersRoutes from './routes/users.js';
-import discoverRoutes from './routes/discover.js';
-import commentsRoutes from './routes/comments.js';
+// Unified router loader (provides grouped + legacy mounts)
+import apiRouter from './routes/index.js';
+// API docs (Swagger/OpenAPI)
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
 import ServerStats from './models/ServerStats.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { startBackgroundScrobbler, runBackgroundScrobbler } from './jobs/backgroundScrobbler.js';
 import { runArchiveJob } from './jobs/archiveScrobbles.js';
 import { ensureMongoConnected } from './middleware/mongoConnection.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { compressionMiddleware, conditionalGet } from './middleware/optimization.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-dotenv.config();
+// Load .env from server root (critical for Spotify credentials)
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+// Verify critical env vars are loaded
+if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+  console.error('❌ CRITICAL: Spotify credentials not loaded from .env!');
+  console.error('   SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? 'SET' : 'MISSING');
+  console.error('   SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? 'SET' : 'MISSING');
+  process.exit(1);
+}
+
+console.log('✅ Spotify credentials loaded successfully');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 5000;
+
+// Load OpenAPI document (fail-safe: continue if load fails)
+let openapiDoc: any = null;
+try {
+  // Prefer docs/openapi.yaml; fallback to project root's openapi.yaml
+  const primary = path.join(__dirname, '../docs/openapi.yaml');
+  const fallback = path.join(__dirname, '../openapi.yaml');
+  try { openapiDoc = YAML.load(primary); } catch { openapiDoc = YAML.load(fallback); }
+  // Minimal augmentation: add dynamic server URL if running locally
+  if (openapiDoc && openapiDoc.servers && Array.isArray(openapiDoc.servers)) {
+    const hasLocal = openapiDoc.servers.some((s: any) => /localhost/.test(s.url));
+    if (!hasLocal) openapiDoc.servers.unshift({ url: `http://localhost:${DEFAULT_PORT}` });
+  }
+} catch (e) {
+  console.warn('⚠️  OpenAPI document load failed:', (e as any)?.message);
+}
 
 // Middleware
 app.use(cors({
@@ -37,10 +65,44 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+// V2 Optimization: Compression (gzip) for all responses
+app.use(compressionMiddleware);
+
+// V2 Optimization: Conditional GET (ETag) for cacheable responses
+app.use(conditionalGet);
+
+// Advertise envelope version for clients during migration
+app.use((req, res, next) => {
+  res.setHeader('X-API-Envelope', 'transitional-v1');
+  next();
+});
+
 // Lightweight request logger (ONLY in development)
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, _res, next) => {
-    console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+    // Sanitize query string to avoid leaking tokens/noise in logs
+    try {
+      const url = new URL(req.protocol + '://' + req.get('host') + req.originalUrl);
+      // Mask sensitive params
+      const sensitive = new Set(['accessToken', 'token', 'refreshToken', 'code', 'code_verifier']);
+      for (const key of Array.from(url.searchParams.keys())) {
+        if (sensitive.has(key)) {
+          url.searchParams.set(key, '***');
+        }
+      }
+      // Optionally skip very chatty endpoints
+      const pathname = url.pathname || '';
+      const noisy = ['/api/music/album'];
+      if (noisy.includes(pathname)) {
+        // Log a compact line without query details
+        console.log(`[REQ] ${req.method} ${pathname}`);
+      } else {
+        console.log(`[REQ] ${req.method} ${url.pathname}${url.search ? '?' + url.searchParams.toString() : ''}`);
+      }
+    } catch {
+      // Fallback
+      console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+    }
     next();
   });
 }
@@ -56,13 +118,211 @@ app.use(session({
 }));
 
 // Routes (protected by MongoDB connection check)
-app.use('/api/auth', ensureMongoConnected, authRoutes);
-app.use('/api/music', ensureMongoConnected, musicRoutes);
-app.use('/api/reviews', ensureMongoConnected, reviewRoutes);
-app.use('/api/users', ensureMongoConnected, usersRoutes);
-app.use('/api/stats', ensureMongoConnected, statsRoutes);
-app.use('/api/discover', ensureMongoConnected, discoverRoutes);
-app.use('/api/comments', ensureMongoConnected, commentsRoutes);
+app.use('/api', ensureMongoConnected, apiRouter);
+
+// Serve interactive API docs
+if (openapiDoc) {
+  // Serve light theme CSS as a separate file for higher priority loading
+  app.get('/swagger-light.css', (_req, res) => {
+    res.setHeader('Content-Type', 'text/css');
+    res.send(`
+      @media (prefers-color-scheme: dark) {
+        :root { color-scheme: light !important; }
+      }
+      :root { color-scheme: light !important; }
+      html, body, #swagger-ui, .swagger-ui {
+        background: #ffffff !important;
+        color: #111111 !important;
+        background-color: #ffffff !important;
+      }
+      * { color: inherit !important; }
+      .swagger-ui .wrapper { background: #ffffff !important; }
+      .swagger-ui .information-container { background: #ffffff !important; }
+      .swagger-ui .scheme-container { background: #fafafa !important; }
+      .swagger-ui .opblock { background: #ffffff !important; border: 1px solid #eaecef !important; }
+      .swagger-ui .opblock-summary { background: #f7f7f9 !important; }
+      .swagger-ui .model-box { background: #fafafa !important; }
+      .swagger-ui .topbar { background: #f7f7f9 !important; border-bottom: 1px solid #e5e5e5 !important; }
+      .swagger-ui .info .title { color: #111 !important; font-weight: 700; }
+      .swagger-ui .markdown p, .swagger-ui .renderedMarkdown p { color: #222 !important; }
+      .swagger-ui .btn { color: #111 !important; background: #ffffff !important; border: 1px solid #ccc !important; }
+      .swagger-ui select, .swagger-ui input, .swagger-ui textarea { 
+        color: #111 !important; 
+        background: #ffffff !important; 
+        border: 1px solid #ccc !important; 
+      }
+      .swagger-ui .model, .swagger-ui .model-box { color: #111 !important; }
+      .swagger-ui table thead tr th, .swagger-ui table thead tr td { 
+        color: #111 !important; 
+        background: #f7f7f9 !important; 
+      }
+    `);
+  });
+
+  // JS shim to hard-force light theme even if extensions inject dark mode
+  app.get('/api-docs-light.js', (_req, res) => {
+    const js = `(() => {
+      const apply = () => {
+        try {
+          const html = document.documentElement;
+          const body = document.body;
+          if (!html || !body) return;
+          // Remove/disable common dark-mode extension artifacts (e.g., Dark Reader)
+          try {
+            document.querySelectorAll("style[class^='darkreader']").forEach((el) => el.parentNode && el.parentNode.removeChild(el));
+            document.querySelectorAll("link[class^='darkreader']").forEach((el) => el.parentNode && el.parentNode.removeChild(el));
+            html.classList.remove('darkreader');
+            html.removeAttribute('data-darkreader-mode');
+            html.removeAttribute('data-darkreader-scheme');
+          } catch {}
+
+          html.setAttribute('data-theme', 'light');
+          const root = document.querySelector('.swagger-ui');
+          if (root) root.setAttribute('data-theme', 'light');
+          // Inline styles with !important trump extension stylesheets
+          html.style.setProperty('background', '#ffffff', 'important');
+          html.style.setProperty('color-scheme', 'light', 'important');
+          html.style.setProperty('filter', 'none', 'important');
+          body.style.setProperty('background', '#ffffff', 'important');
+          body.style.setProperty('color', '#111111', 'important');
+          body.style.setProperty('filter', 'none', 'important');
+
+          // Ensure swagger root containers are light
+          const roots = document.querySelectorAll('#swagger-ui, .swagger-ui');
+          roots.forEach((r) => {
+            (r as HTMLElement).style.setProperty('background', '#ffffff', 'important');
+            (r as HTMLElement).style.setProperty('color', '#111111', 'important');
+          });
+
+          // Add explicit meta for color-scheme
+          let meta = document.querySelector("meta[name='color-scheme']");
+          if (!meta) {
+            meta = document.createElement('meta');
+            (meta as HTMLMetaElement).name = 'color-scheme';
+            (meta as HTMLMetaElement).content = 'light';
+            document.head.appendChild(meta);
+          } else {
+            (meta as HTMLMetaElement).content = 'light';
+          }
+        } catch {}
+      };
+      apply();
+      // Re-apply if extensions mutate attributes/styles
+      const obs = new MutationObserver(() => apply());
+      obs.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
+      window.addEventListener('load', apply);
+      document.addEventListener('readystatechange', apply);
+    })();`;
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(js);
+  });
+
+  const swaggerOptions = {
+    customSiteTitle: 'Ratesangeet API Docs',
+    customCss: `
+      /* Force light theme regardless of system preference */
+      @media (prefers-color-scheme: dark) {
+        :root { color-scheme: light !important; }
+        html, body { background: #ffffff !important; color: #111111 !important; }
+      }
+      
+      /* Nuclear option: force every element to light */
+      :root { color-scheme: light !important; }
+      html { background: #ffffff !important; }
+      body { background: #ffffff !important; color: #111111 !important; }
+      
+      /* Swagger UI containers */
+      #swagger-ui { background: #ffffff !important; }
+      .swagger-ui { background: #ffffff !important; color: #111111 !important; }
+      .swagger-ui * { color: #111111 !important; }
+      
+      /* Main content areas */
+      .swagger-ui .wrapper { background: #ffffff !important; }
+      .swagger-ui .information-container { background: #ffffff !important; }
+      .swagger-ui .info { background: #ffffff !important; color: #111 !important; }
+      .swagger-ui .info .title { color: #111 !important; font-weight: 700; }
+      .swagger-ui .info .description { color: #333 !important; }
+      
+      /* Scheme/server selector */
+      .swagger-ui .scheme-container { background: #fafafa !important; }
+      
+      /* Operation blocks */
+      .swagger-ui .opblock-tag-section { background: #ffffff !important; }
+      .swagger-ui .opblock-tag { background: #fafafa !important; color: #111 !important; border-bottom: 1px solid #e5e5e5 !important; }
+      .swagger-ui .opblock { background: #ffffff !important; border: 1px solid #e5e5e5 !important; }
+      .swagger-ui .opblock-summary { background: #f7f7f9 !important; color: #111 !important; }
+      .swagger-ui .opblock-summary-method { color: #ffffff !important; }
+      .swagger-ui .opblock-description { color: #333 !important; }
+      .swagger-ui .opblock-body { background: #fafafa !important; }
+      
+      /* Parameters & models */
+      .swagger-ui .parameters { background: #ffffff !important; }
+      .swagger-ui .model-box { background: #fafafa !important; color: #111 !important; }
+      .swagger-ui .model { color: #111 !important; }
+      .swagger-ui .property { color: #111 !important; }
+      
+      /* Tables */
+      .swagger-ui table { background: #ffffff !important; }
+      .swagger-ui table thead tr th, 
+      .swagger-ui table thead tr td { 
+        color: #111 !important; 
+        background: #f7f7f9 !important; 
+      }
+      .swagger-ui table tbody tr td { color: #111 !important; background: #ffffff !important; }
+      
+      /* Form controls */
+      .swagger-ui .btn { color: #111 !important; background: #ffffff !important; border: 1px solid #ccc !important; }
+      .swagger-ui select, 
+      .swagger-ui input, 
+      .swagger-ui textarea { 
+        color: #111 !important; 
+        background: #ffffff !important; 
+        border: 1px solid #ccc !important; 
+      }
+      
+      /* Responses */
+      .swagger-ui .responses-inner { background: #ffffff !important; }
+      .swagger-ui .response { background: #fafafa !important; }
+      .swagger-ui .response-col_status { color: #111 !important; }
+      .swagger-ui .response-col_description { color: #111 !important; }
+      
+      /* Code examples & JSON (the dark boxes) */
+      .swagger-ui .highlight-code { background: #f6f8fa !important; }
+      .swagger-ui .microlight { background: #f6f8fa !important; color: #111 !important; }
+      .swagger-ui pre { background: #f6f8fa !important; color: #111 !important; border: 1px solid #e1e4e8 !important; }
+      .swagger-ui code { background: #f6f8fa !important; color: #111 !important; }
+      .swagger-ui .example, .swagger-ui .examples { background: #f6f8fa !important; }
+      .swagger-ui .model-example { background: #f6f8fa !important; }
+      
+      /* Tab controls for examples */
+      .swagger-ui .tab { background: #ffffff !important; color: #111 !important; }
+      .swagger-ui .tab.active { background: #f6f8fa !important; }
+      
+      /* Markdown content */
+      .swagger-ui .markdown p, 
+      .swagger-ui .renderedMarkdown p { color: #222 !important; }
+      .swagger-ui .markdown code { background: #f6f8fa !important; color: #d73a49 !important; padding: 2px 4px !important; }
+      
+      /* Topbar */
+      .swagger-ui .topbar { background: #f7f7f9 !important; border-bottom: 1px solid #e5e5e5 !important; }
+    `,
+    swaggerOptions: {
+      docExpansion: 'list',
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+    },
+    customJs: '/api-docs-light.js',
+  } as any;
+
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiDoc, swaggerOptions));
+  console.log('📘 API docs available at /api-docs');
+} else {
+  console.log('📘 API docs not loaded (openapi.yaml missing or invalid)');
+}
+
+// Global error handler (must be after routes)
+app.use(errorHandler);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });

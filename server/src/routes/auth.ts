@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { transitionalSuccess, error as respondError } from '../utils/response';
+import { transitionalSuccess, error as respondError } from '../utils/response.js';
 import axios from 'axios';
-import User from '../models/User';
+import User from '../models/User.js';
 
 const router = Router();
 // Normalize Spotify OAuth errors into friendly codes/messages

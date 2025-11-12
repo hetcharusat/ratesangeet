@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import reviewRoutesNew from '../reviewsNew'; // Refactored with controllers
-import reviewRoutesLegacy from '../reviews'; // Original for backward compat
-import commentsRoutes from '../comments';
+import reviewRoutesNew from '../reviewsNew.js'; // Refactored with controllers
+import reviewRoutesLegacy from '../reviews.js'; // Original for backward compat
+import commentsRoutes from '../comments.js';
 
 // Group reviews, reactions, comments under /api/reviews/*
 const router = Router();

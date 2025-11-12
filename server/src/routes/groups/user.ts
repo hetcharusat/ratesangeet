@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import usersRoutes from '../users';
-import authRoutes from '../auth';
+import usersRoutes from '../users.js';
+import authRoutes from '../auth.js';
 
 // Group user-related capabilities: profiles, social graph, and auth helpers
 const router = Router();

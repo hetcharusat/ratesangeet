@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import Scrobble from '../models/Scrobble';
-import AlbumStats from '../models/AlbumStats';
-import TrackStats from '../models/TrackStats';
-import UserStatsSummary from '../models/UserStatsSummary';
-import CompletionEvent from '../models/CompletionEvent';
-import User from '../models/User';
+import Scrobble from '../models/Scrobble.js';
+import AlbumStats from '../models/AlbumStats.js';
+import TrackStats from '../models/TrackStats.js';
+import UserStatsSummary from '../models/UserStatsSummary.js';
+import CompletionEvent from '../models/CompletionEvent.js';
+import User from '../models/User.js';
 import path from 'path';
 import fs from 'fs';
 

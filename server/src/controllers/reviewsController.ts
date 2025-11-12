@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import Review from '../models/Review';
-import ReviewComment from '../models/ReviewComment';
-import User from '../models/User';
-import * as respond from '../utils/response';
+import Review from '../models/Review.js';
+import ReviewComment from '../models/ReviewComment.js';
+import User from '../models/User.js';
+import * as respond from '../utils/response.js';
 
 export async function createReview(req: Request, res: Response) {
   const { userId, itemType, spotifyId, itemName, artistName, albumArt, rating, reviewText, isPublic, listeningDate } = req.body;

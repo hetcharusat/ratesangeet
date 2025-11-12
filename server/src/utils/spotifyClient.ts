@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import User from '../models/User';
+import User from '../models/User.js';
 
 const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';

@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { transitionalSuccess, error as respondError } from '../utils/response';
-import Review from '../models/Review';
-import ReviewComment from '../models/ReviewComment';
-import User from '../models/User';
-import { requireAuth } from '../middleware/auth';
+import { transitionalSuccess, error as respondError } from '../utils/response.js';
+import Review from '../models/Review.js';
+import ReviewComment from '../models/ReviewComment.js';
+import User from '../models/User.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 

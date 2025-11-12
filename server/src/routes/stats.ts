@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
-import { cachedSuccess, error, success } from '../utils/response';
-import AlbumStats from '../models/AlbumStats';
-import TrackStats from '../models/TrackStats';
-import { parseUserId } from '../middleware/parseUserId';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager.js';
+import { cachedSuccess, error, success } from '../utils/response.js';
+import AlbumStats from '../models/AlbumStats.js';
+import TrackStats from '../models/TrackStats.js';
+import { parseUserId } from '../middleware/parseUserId.js';
 
 const router = Router();
 

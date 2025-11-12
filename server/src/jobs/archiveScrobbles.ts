@@ -1,9 +1,9 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import Scrobble from '../models/Scrobble';
-import AlbumStats from '../models/AlbumStats';
-import TrackStats from '../models/TrackStats';
-import UserStatsSummary from '../models/UserStatsSummary';
+import Scrobble from '../models/Scrobble.js';
+import AlbumStats from '../models/AlbumStats.js';
+import TrackStats from '../models/TrackStats.js';
+import UserStatsSummary from '../models/UserStatsSummary.js';
 
 dotenv.config();
 

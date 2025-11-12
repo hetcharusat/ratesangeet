@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import musicRoutes from '../music';
-import discoverRoutes from '../discover';
+import musicRoutes from '../music.js';
+import discoverRoutes from '../discover.js';
 
 // Group Spotify-related capabilities: search, artist, album, playback, sync
 const router = Router();

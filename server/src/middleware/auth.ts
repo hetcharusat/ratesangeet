@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import User from '../models/User';
+import User from '../models/User.js';
 
 // Helper: extract user id or bearer token
 function getCredentials(req: Request): { userId?: string; bearer?: string } {

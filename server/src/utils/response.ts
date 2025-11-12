@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { CacheMetadata } from './cacheManager';
+import { CacheMetadata } from './cacheManager.js';
 
 export interface ApiSuccess<T = any> {
   success: true;

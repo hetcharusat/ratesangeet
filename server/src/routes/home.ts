@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
-import { cachedSuccess, error } from '../utils/response';
-import { spotifyClient } from '../utils/spotifyClient';
-import User from '../models/User';
-import Scrobble from '../models/Scrobble';
-import AlbumStats from '../models/AlbumStats';
-import TrackStats from '../models/TrackStats';
-import UserStatsSummary from '../models/UserStatsSummary';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager.js';
+import { cachedSuccess, error } from '../utils/response.js';
+import { spotifyClient } from '../utils/spotifyClient.js';
+import User from '../models/User.js';
+import Scrobble from '../models/Scrobble.js';
+import AlbumStats from '../models/AlbumStats.js';
+import TrackStats from '../models/TrackStats.js';
+import UserStatsSummary from '../models/UserStatsSummary.js';
 
 const router = Router();
 

@@ -1,14 +1,14 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import axios from 'axios';
-import Scrobble from '../models/Scrobble';
-import TrackStats from '../models/TrackStats';
-import AlbumStats from '../models/AlbumStats';
-import UserStatsSummary from '../models/UserStatsSummary';
-import CompletionEvent from '../models/CompletionEvent';
-import { spotifyService } from '../services/SpotifyService';
-import { snapshotRateLimiter } from '../middleware/optimization';
-import { requireAuth } from '../middleware/auth';
+import Scrobble from '../models/Scrobble.js';
+import TrackStats from '../models/TrackStats.js';
+import AlbumStats from '../models/AlbumStats.js';
+import UserStatsSummary from '../models/UserStatsSummary.js';
+import CompletionEvent from '../models/CompletionEvent.js';
+import { spotifyService } from '../services/SpotifyService.js';
+import { snapshotRateLimiter } from '../middleware/optimization.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 

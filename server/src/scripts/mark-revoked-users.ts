@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import axios from 'axios';
-import User from '../models/User';
+import User from '../models/User.js';
 
 dotenv.config();
 

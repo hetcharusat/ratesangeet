@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
-import Track from '../models/Track';
-import Album from '../models/Album';
-import Artist from '../models/Artist';
+import Track from '../models/Track.js';
+import Album from '../models/Album.js';
+import Artist from '../models/Artist.js';
 
 /**
  * Hybrid Normalization Service

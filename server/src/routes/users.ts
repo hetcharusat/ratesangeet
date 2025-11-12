@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { transitionalSuccess, error as respondError } from '../utils/response';
+import { transitionalSuccess, error as respondError } from '../utils/response.js';
 import mongoose from 'mongoose';
-import User from '../models/User';
-import Review from '../models/Review';
-import Scrobble from '../models/Scrobble';
-import { requireAuth, requireSelfParam } from '../middleware/auth';
+import User from '../models/User.js';
+import Review from '../models/Review.js';
+import Scrobble from '../models/Scrobble.js';
+import { requireAuth, requireSelfParam } from '../middleware/auth.js';
 
 const router = Router();
 

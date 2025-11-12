@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import ReviewComment from '../models/ReviewComment';
-import Review from '../models/Review';
-import User from '../models/User';
+import ReviewComment from '../models/ReviewComment.js';
+import Review from '../models/Review.js';
+import User from '../models/User.js';
 import mongoose from 'mongoose';
 
 const router = Router();

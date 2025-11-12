@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { Request, Response } from 'express';
-import Scrobble from '../../models/Scrobble';
-import TrackStats from '../../models/TrackStats';
-import AlbumStats from '../../models/AlbumStats';
-import UserStatsSummary from '../../models/UserStatsSummary';
-import { requireAuth } from '../../middleware/auth';
-import { HybridNormalizationService } from '../../services/HybridNormalizationService';
+import Scrobble from '../../models/Scrobble.js';
+import TrackStats from '../../models/TrackStats.js';
+import AlbumStats from '../../models/AlbumStats.js';
+import UserStatsSummary from '../../models/UserStatsSummary.js';
+import { requireAuth } from '../../middleware/auth.js';
+import { HybridNormalizationService } from '../../services/HybridNormalizationService.js';
 import axios from 'axios';
 
 const router = Router();

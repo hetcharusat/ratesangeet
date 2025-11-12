@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
-import { cachedSuccess, error } from '../utils/response';
-import Scrobble from '../models/Scrobble';
-import Review from '../models/Review';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager.js';
+import { cachedSuccess, error } from '../utils/response.js';
+import Scrobble from '../models/Scrobble.js';
+import Review from '../models/Review.js';
 import axios from 'axios';
 
 const router = Router();

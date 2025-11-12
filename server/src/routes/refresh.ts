@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { cache, CacheKeys } from '../utils/cacheManager';
-import { cachedSuccess, error } from '../utils/response';
-import { spotifyClient } from '../utils/spotifyClient';
+import { cache, CacheKeys } from '../utils/cacheManager.js';
+import { cachedSuccess, error } from '../utils/response.js';
+import { spotifyClient } from '../utils/spotifyClient.js';
 
 const router = Router();
 

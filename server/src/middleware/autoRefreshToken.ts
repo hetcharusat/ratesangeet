@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import axios from 'axios';
-import User from '../models/User';
+import User from '../models/User.js';
 
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 

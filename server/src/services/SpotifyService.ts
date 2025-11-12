@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager';
+import { cache, CacheKeys, CacheTTL } from '../utils/cacheManager.js';
 
 /**
  * SpotifyService: Minimal data mappers + caching for Spotify API

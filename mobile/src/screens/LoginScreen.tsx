@@ -76,18 +76,15 @@ export default function LoginScreen() {
   // Generate redirect URI based on platform and environment
   const getRedirectUri = (): string => {
     if (Platform.OS === 'web') {
-      // On web, use 127.0.0.1 (Spotify REQUIRES explicit IPv4, NOT "localhost")
-      // Spotify docs: "localhost is not allowed as redirect URI"
-      // https://developer.spotify.com/documentation/web-api/concepts/redirect_uri
+      // Use current origin (works with localhost OR 127.0.0.1)
+      // User can access via either URL, we match what they're using
       if (typeof window !== 'undefined') {
-        const port = window.location.port || '8081';
-        // ALWAYS use 127.0.0.1 (Spotify requirement)
-        const redirectUri = `http://127.0.0.1:${port}`;
-        console.log('🔗 Web redirect URI:', redirectUri);
-        return redirectUri;
+        const origin = window.location.origin;
+        console.log('🔗 Web redirect URI (from origin):', origin);
+        return origin;
       }
       // Fallback
-      return 'http://127.0.0.1:8081';
+      return 'http://localhost:8081';
     } else {
       // Mobile uses custom scheme
       return 'ratesangeet://callback';

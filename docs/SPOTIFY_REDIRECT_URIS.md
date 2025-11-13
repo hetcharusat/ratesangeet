@@ -14,10 +14,15 @@ Go to: https://developer.spotify.com/dashboard
 
 ### 1. Local Development (Web)
 ```
+http://localhost:8081
+```
+**Purpose**: Expo web dev server (local testing via localhost)
+
+```
 http://127.0.0.1:8081
 ```
-**Purpose**: Expo web dev server (local testing)  
-**Why `127.0.0.1`?**: Spotify forbids `localhost` - requires explicit IPv4
+**Purpose**: Expo web dev server (local testing via 127.0.0.1)  
+**Why both?**: Users may access via either URL - both must work
 
 ---
 
@@ -41,8 +46,8 @@ https://ratesangeet.onrender.com/api/auth/callback
 
 ## 📝 Summary
 
-**Total URIs**: 3  
-**Development**: 1 (web)  
+**Total URIs**: 4  
+**Development**: 2 (localhost + 127.0.0.1)  
 **Mobile**: 1 (deep link)  
 **Production**: 1 (server)
 
@@ -53,7 +58,7 @@ https://ratesangeet.onrender.com/api/auth/callback
 After adding URIs to Spotify Dashboard:
 
 - [ ] Click **"Save"** button at bottom of modal
-- [ ] Verify all 3 URIs appear in the list
+- [ ] Verify all 4 URIs appear in the list
 - [ ] No typos (case-sensitive, no trailing slashes)
 - [ ] Port matches Expo (usually 8081, check console)
 

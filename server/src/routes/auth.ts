@@ -63,15 +63,25 @@ router.get('/login', (req: Request, res: Response) => {
     'user-read-playback-state',
   ].join(' ');
 
+  // Determine base URL from request (prefer env vars, fallback to request)
+  const protocol = req.secure ? 'https' : 'http';
+  const host = req.get('host') || 'localhost:5000';
+  const baseUrl = `${protocol}://${host}`;
+
   // Select appropriate redirect URI
-  const redirectUri = target === 'mobile'
-    ? (process.env.SPOTIFY_REDIRECT_URI_MOBILE || process.env.SPOTIFY_REDIRECT_URI || '')
-    : (process.env.SPOTIFY_REDIRECT_URI_WEB || process.env.SPOTIFY_REDIRECT_URI || '');
+  let redirectUri: string;
+  if (target === 'mobile') {
+    // Mobile: Spotify redirects to special mobile endpoint
+    redirectUri = process.env.SPOTIFY_REDIRECT_URI_MOBILE || `${baseUrl}/api/auth/callback/mobile`;
+  } else {
+    // Web: Spotify redirects to callback endpoint, which returns HTML to store tokens
+    redirectUri = process.env.SPOTIFY_REDIRECT_URI_WEB || `${baseUrl}/api/auth/callback`;
+  }
 
   console.log('🔑 /auth/login - Sending to Spotify:', {
     target,
     redirectUri,
-    clientId: process.env.SPOTIFY_CLIENT_ID,
+    clientId: process.env.SPOTIFY_CLIENT_ID?.slice(0, 10) + '...',
   });
 
   const params = new URLSearchParams({
@@ -84,8 +94,137 @@ router.get('/login', (req: Request, res: Response) => {
   return transitionalSuccess(res, { url: `${SPOTIFY_AUTH_URL}?${params.toString()}`, target, redirectUri });
 });
 
-// Spotify OAuth Callback
-router.post('/callback', async (req: Request, res: Response) => {
+// Web OAuth Callback - GET (Spotify redirects here with code)
+router.get('/callback', async (req: Request, res: Response) => {
+  const { code, error, state } = req.query;
+
+  if (error) {
+    console.error('❌ Spotify OAuth error:', error);
+    return res.send(`<html><body>Error: ${error}<br/><a href="/">Back to login</a></body></html>`);
+  }
+
+  if (!code) {
+    return res.send('<html><body>Missing authorization code. <a href="/">Back to login</a></body></html>');
+  }
+
+  try {
+    // Exchange code for tokens
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code as string,
+      redirect_uri: process.env.SPOTIFY_REDIRECT_URI_WEB || process.env.SPOTIFY_REDIRECT_URI || '',
+    });
+
+    const tokenResponse = await axios.post(
+      SPOTIFY_TOKEN_URL,
+      tokenParams,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${Buffer.from(
+            `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+          ).toString('base64')}`,
+        },
+      }
+    );
+
+    const { access_token, refresh_token } = tokenResponse.data;
+
+    // Get user profile
+    const userResponse = await axios.get('https://api.spotify.com/v1/me', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    const userData = userResponse.data;
+
+    // Save or update user in database
+    let user = await User.findOne({ spotifyId: userData.id });
+    
+    if (user) {
+      user.displayName = userData.display_name;
+      user.email = userData.email;
+      user.accessToken = access_token;
+      user.refreshToken = refresh_token;
+      user.profileImage = userData.images?.[0]?.url;
+      // @ts-ignore
+      user.tokenStatus = 'active';
+      // @ts-ignore
+      user.lastTokenRefreshAt = new Date();
+      // @ts-ignore
+      user.consecutiveRefreshFailures = 0;
+      if (!user.username) {
+        const base = (user.displayName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
+        let candidate = base;
+        let suffix = 0;
+        while (await User.findOne({ username: candidate })) {
+          suffix += 1;
+          candidate = `${base}${suffix}`;
+        }
+        user.username = candidate;
+      }
+      await user.save();
+    } else {
+      const base = (userData.display_name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
+      let candidate = base;
+      let suffix = 0;
+      while (await User.findOne({ username: candidate })) {
+        suffix += 1;
+        candidate = `${base}${suffix}`;
+      }
+      user = new User({
+        spotifyId: userData.id,
+        displayName: userData.display_name,
+        email: userData.email,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        profileImage: userData.images?.[0]?.url,
+        username: candidate,
+        // @ts-ignore
+        tokenStatus: 'active',
+      });
+      await user.save();
+    }
+
+    console.log('✅ Web auth successful, returning tokens');
+
+    // Return HTML that stores tokens and redirects
+    return res.send(`
+      <html>
+        <head><title>Logging in...</title></head>
+        <body>
+          <script>
+            // Store tokens in localStorage and redirect
+            localStorage.setItem('accessToken', '${access_token}');
+            localStorage.setItem('refreshToken', '${refresh_token}');
+            localStorage.setItem('user', JSON.stringify({
+              id: '${user._id}',
+              spotifyId: '${user.spotifyId}',
+              displayName: '${user.displayName}',
+              email: '${user.email}',
+              profileImage: '${user.profileImage}',
+              username: '${user.username}'
+            }));
+            window.location.href = '/';
+          </script>
+          Loading...
+        </body>
+      </html>
+    `);
+  } catch (error: any) {
+    const mapped = mapSpotifyAuthError(error);
+    console.error('❌ Web auth error:', mapped.errorCode);
+    return res.send(`
+      <html>
+        <body>
+          <h1>Authentication Failed</h1>
+          <p>${mapped.message}</p>
+          <a href="/">Back to login</a>
+        </body>
+      </html>
+    `);
+  }
+});
+
   const { code, redirectUri, codeVerifier, target } = req.body as { code?: string; redirectUri?: string; codeVerifier?: string; target?: string };
 
   console.log('📱 /auth/callback received:', {

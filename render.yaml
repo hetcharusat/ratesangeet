@@ -19,7 +19,7 @@ services:
       - key: SPOTIFY_CLIENT_SECRET
         sync: false
       - key: SPOTIFY_REDIRECT_URI_MOBILE
-        value: ratesangeet://callback
+        value: https://ratesangeet.onrender.com/api/auth/callback/mobile
       - key: SPOTIFY_REDIRECT_URI_WEB
         sync: false
       - key: SPOTIFY_REDIRECT_URI

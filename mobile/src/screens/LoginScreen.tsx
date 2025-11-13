@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Image, Platform, Linking } from 'react-native';
-import { Button, Text, useTheme } from 'react-native-paper';
+import { Button, Text, useTheme, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
 import { useAuth } from '../context/AuthContext';
 import { Motion } from '../theme/tokens';
 import config from '../config';
@@ -12,10 +14,53 @@ if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
 }
 
+// PKCE helper functions
+const generateCodeVerifier = async (): Promise<string> => {
+  const randomBytes = Crypto.getRandomBytes(32);
+  return base64URLEncode(randomBytes);
+};
+
+const generateCodeChallenge = async (codeVerifier: string): Promise<string> => {
+  const hashed = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    codeVerifier
+  );
+  return base64URLEncode(hashed);
+};
+
+const base64URLEncode = (str: string | ArrayBuffer): string => {
+  const base64 = typeof str === 'string' 
+    ? btoa(str) 
+    : btoa(String.fromCharCode(...new Uint8Array(str as ArrayBuffer)));
+  return base64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+};
+
 export default function LoginScreen() {
   const { setAuth } = useAuth();
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  
+  // Generate redirect URI based on platform and environment
+  const getRedirectUri = (): string => {
+    if (Platform.OS === 'web') {
+      // On web, use the current origin (which should be http://192.168.42.205:8081 in dev)
+      if (typeof window !== 'undefined') {
+        const origin = window.location.origin;
+        console.log('🔗 Web redirect URI:', origin);
+        return origin;
+      }
+      // Fallback (should not happen)
+      return 'http://192.168.42.205:8081';
+    } else {
+      // Mobile uses custom scheme
+      return 'ratesangeet://callback';
+    }
+  };
 
   // Handle URL parameters on web (code from Spotify callback)
   useEffect(() => {
@@ -23,11 +68,29 @@ export default function LoginScreen() {
       const handleWebCallback = async () => {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const errorParam = urlParams.get('error');
         
-        if (code) {
+        if (errorParam) {
+          console.error('❌ Auth error:', errorParam);
+          setError(`Authentication failed: ${errorParam}`);
+          setSnackbarVisible(true);
+          window.history.replaceState({}, document.title, '/');
+          return;
+        }
+        
+        if (code && state) {
           setLoading(true);
           try {
             console.log('🔑 Exchanging code with server...');
+            
+            // Retrieve codeVerifier from sessionStorage
+            const codeVerifier = sessionStorage.getItem('spotify_code_verifier');
+            const redirectUri = sessionStorage.getItem('spotify_redirect_uri');
+            
+            if (!codeVerifier) {
+              throw new Error('Code verifier missing from session');
+            }
             
             // Exchange code for tokens via server
             const response = await fetch(`${config.API_URL}/auth/callback`, {
@@ -35,7 +98,8 @@ export default function LoginScreen() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 code,
-                redirectUri: window.location.origin,
+                redirectUri: redirectUri || getRedirectUri(),
+                codeVerifier,
                 target: 'web',
               }),
             });
@@ -54,13 +118,20 @@ export default function LoginScreen() {
               
               console.log('✅ Auth stored, user logged in');
               
-              // Clean URL
+              // Clean up
+              sessionStorage.removeItem('spotify_code_verifier');
+              sessionStorage.removeItem('spotify_redirect_uri');
+              sessionStorage.removeItem('spotify_state');
               window.history.replaceState({}, document.title, '/');
             } else {
               console.error('❌ Login failed:', data.error || 'Unknown error');
+              setError(data.error || 'Authentication failed');
+              setSnackbarVisible(true);
             }
-          } catch (error) {
-            console.error('❌ Login error:', error);
+          } catch (err: any) {
+            console.error('❌ Login error:', err);
+            setError(err.message || 'Authentication failed');
+            setSnackbarVisible(true);
           } finally {
             setLoading(false);
           }
@@ -148,35 +219,122 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     setLoading(true);
+    setError('');
+    
     try {
-      // Step 1: Get Spotify auth URL from server
-      const authUrl = `${config.API_URL}/auth/login?target=${Platform.OS === 'web' ? 'web' : 'mobile'}`;
-      const response = await fetch(authUrl);
-      const data = await response.json();
+      const redirectUri = getRedirectUri();
+      console.log('🔗 Using redirect URI:', redirectUri);
       
-      if (data.success && data.data?.url) {
-        // Step 2: Open Spotify OAuth
-        if (Platform.OS === 'web') {
-          // On web, redirect in same window
-          window.location.href = data.data.url;
-        } else {
-          // On mobile, use openBrowserAsync which works better for OAuth
-          // It opens system browser but properly handles the redirect back
-          console.log('🔑 Opening Spotify auth...');
-          
-          const result = await WebBrowser.openBrowserAsync(data.data.url);
-          
-          console.log('🔑 Browser closed:', result.type);
-          // Note: The actual auth callback is handled by deep linking
-          // See the useEffect below for handling the redirect
-          setLoading(false);
-        }
+      if (Platform.OS === 'web') {
+        // Web: Generate PKCE parameters and store them
+        const codeVerifier = await generateCodeVerifier();
+        const codeChallenge = await generateCodeChallenge(codeVerifier);
+        const state = Math.random().toString(36).substring(7);
+        
+        // Store PKCE parameters in sessionStorage
+        sessionStorage.setItem('spotify_code_verifier', codeVerifier);
+        sessionStorage.setItem('spotify_redirect_uri', redirectUri);
+        sessionStorage.setItem('spotify_state', state);
+        
+        // Build Spotify authorization URL
+        const params = new URLSearchParams({
+          client_id: config.SPOTIFY_CLIENT_ID,
+          response_type: 'code',
+          redirect_uri: redirectUri,
+          code_challenge_method: 'S256',
+          code_challenge: codeChallenge,
+          state,
+          scope: [
+            'user-read-private',
+            'user-read-email',
+            'user-read-recently-played',
+            'user-top-read',
+            'user-read-currently-playing',
+            'user-read-playback-state',
+          ].join(' '),
+        });
+        
+        const authUrl = `https://accounts.spotify.com/authorize?${params.toString()}`;
+        console.log('🔑 Redirecting to Spotify...');
+        
+        // Redirect to Spotify (full page redirect)
+        window.location.href = authUrl;
       } else {
-        console.error('Failed to get auth URL:', data);
+        // Mobile: Use expo-auth-session with PKCE
+        const discovery = {
+          authorizationEndpoint: 'https://accounts.spotify.com/authorize',
+          tokenEndpoint: 'https://accounts.spotify.com/api/token',
+        };
+        
+        const codeVerifier = await generateCodeVerifier();
+        const codeChallenge = await generateCodeChallenge(codeVerifier);
+        
+        const authRequest = new AuthSession.AuthRequest({
+          clientId: config.SPOTIFY_CLIENT_ID,
+          redirectUri,
+          scopes: [
+            'user-read-private',
+            'user-read-email',
+            'user-read-recently-played',
+            'user-top-read',
+            'user-read-currently-playing',
+            'user-read-playback-state',
+          ],
+          usePKCE: true,
+          codeChallenge,
+          codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
+        });
+        
+        console.log('🔑 Opening Spotify auth...');
+        const result = await authRequest.promptAsync(discovery);
+        
+        if (result.type === 'success' && result.params.code) {
+          console.log('✅ Got authorization code');
+          
+          // Exchange code for tokens via server
+          const response = await fetch(`${config.API_URL}/auth/callback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: result.params.code,
+              redirectUri,
+              codeVerifier,
+              target: 'mobile',
+            }),
+          });
+          
+          const data = await response.json();
+          
+          if (data.success && data.data) {
+            console.log('✅ Server auth successful');
+            
+            // Save auth data
+            await setAuth({
+              accessToken: data.data.accessToken,
+              refreshToken: data.data.refreshToken,
+              user: data.data.user,
+            });
+            
+            console.log('✅ Auth stored, user logged in');
+          } else {
+            console.error('❌ Login failed:', data.error || 'Unknown error');
+            setError(data.error || 'Authentication failed');
+            setSnackbarVisible(true);
+          }
+        } else if (result.type === 'error') {
+          console.error('❌ Auth error:', result.error);
+          setError(result.error?.message || 'Authentication failed');
+          setSnackbarVisible(true);
+        } else {
+          console.log('🔙 Auth cancelled');
+        }
+        
         setLoading(false);
       }
-    } catch (error) {
-      console.error('Login failed:', error);
+    } catch (err: any) {
+      console.error('❌ Login error:', err);
+      setError(err.message || 'Authentication failed');
+      setSnackbarVisible(true);
       setLoading(false);
     }
   };
@@ -227,6 +385,19 @@ export default function LoginScreen() {
           Powered by Spotify • Free to use
         </Text>
       </View>
+      
+      {/* Error Snackbar */}
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={5000}
+        action={{
+          label: 'Retry',
+          onPress: handleLogin,
+        }}
+      >
+        {error}
+      </Snackbar>
     </SafeAreaView>
   );
 }

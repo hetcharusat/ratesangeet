@@ -14,24 +14,52 @@ if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
 }
 
-// PKCE helper functions
+// PKCE helper functions (Web-compatible)
 const generateCodeVerifier = async (): Promise<string> => {
-  const randomBytes = Crypto.getRandomBytes(32);
-  return base64URLEncode(randomBytes);
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.crypto) {
+    // Use browser's native crypto API (works on http://localhost)
+    const array = new Uint8Array(32);
+    window.crypto.getRandomValues(array);
+    return base64URLEncode(array.buffer);
+  } else {
+    // Use expo-crypto for mobile
+    const randomBytes = Crypto.getRandomBytes(32);
+    return base64URLEncode(randomBytes);
+  }
 };
 
 const generateCodeChallenge = async (codeVerifier: string): Promise<string> => {
-  const hashed = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    codeVerifier
-  );
-  return base64URLEncode(hashed);
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.crypto?.subtle) {
+    // Use browser's native SubtleCrypto API
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    return base64URLEncode(hashBuffer);
+  } else {
+    // Use expo-crypto for mobile
+    const hashed = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      codeVerifier
+    );
+    return base64URLEncode(hashed);
+  }
 };
 
-const base64URLEncode = (str: string | ArrayBuffer): string => {
-  const base64 = typeof str === 'string' 
-    ? btoa(str) 
-    : btoa(String.fromCharCode(...new Uint8Array(str as ArrayBuffer)));
+const base64URLEncode = (input: string | ArrayBuffer): string => {
+  let base64: string;
+  
+  if (typeof input === 'string') {
+    base64 = btoa(input);
+  } else {
+    // ArrayBuffer to base64
+    const bytes = new Uint8Array(input);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    base64 = btoa(binary);
+  }
+  
   return base64
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -48,14 +76,22 @@ export default function LoginScreen() {
   // Generate redirect URI based on platform and environment
   const getRedirectUri = (): string => {
     if (Platform.OS === 'web') {
-      // On web, use the current origin (which should be http://192.168.42.205:8081 in dev)
+      // On web, ALWAYS use localhost for WebCrypto API compatibility
+      // Browser security requires localhost or HTTPS for crypto operations
       if (typeof window !== 'undefined') {
         const origin = window.location.origin;
         console.log('🔗 Web redirect URI:', origin);
+        
+        // If accessed via LAN IP, warn and use localhost
+        if (origin.includes('192.168') || origin.includes('10.0')) {
+          console.warn('⚠️ Accessed via LAN IP - using localhost for redirect');
+          return `http://localhost:${window.location.port || '8081'}`;
+        }
+        
         return origin;
       }
-      // Fallback (should not happen)
-      return 'http://192.168.42.205:8081';
+      // Fallback to localhost
+      return 'http://localhost:8081';
     } else {
       // Mobile uses custom scheme
       return 'ratesangeet://callback';

@@ -6,12 +6,13 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import os from 'os';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 // Unified router loader (provides grouped + legacy mounts)
 import apiRouter from './routes/index.js';
 // API docs (Swagger/OpenAPI)
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
-import path from 'path';
 import ServerStats from './models/ServerStats.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -140,6 +141,25 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
   },
 }));
+
+// Serve static web app files (built by Vite in ../web/dist)
+const webDistPath = path.join(__dirname, '../../web/dist');
+app.use(express.static(webDistPath));
+
+// SPA fallback: serve index.html for non-API routes
+app.get('*', (req, res, next) => {
+  // Skip API routes and swagger docs
+  if (req.path.startsWith('/api') || req.path.startsWith('/swagger')) {
+    return next();
+  }
+  // Serve index.html for all other routes (SPA support)
+  const indexPath = path.join(webDistPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    next();
+  }
+});
 
 // Routes (protected by MongoDB connection check)
 app.use('/api', ensureMongoConnected, apiRouter);

@@ -1,421 +1,179 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  StyleSheet, 
-  Image, 
-  TouchableOpacity, 
-  ActivityIndicator,
-  SectionList,
-  ScrollView
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, FlatList, StyleSheet, Pressable } from 'react-native';
+import { Appbar, Searchbar, SegmentedButtons, Text, useTheme, Avatar } from 'react-native-paper';
+import { searchMusic, searchUsersOptimized } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { searchMusic, searchUsers, Track } from '../services/api';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import RSButton from '../components/ui/RSButton';
+import SkeletonLine from '../components/ui/SkeletonLine';
 
-interface Album {
-  id: string;
-  name: string;
-  artists: { name: string }[];
-  images: { url: string }[];
-  album_type: string;
-}
+type SearchTab = 'tracks' | 'albums' | 'users';
 
-type FilterType = 'all' | 'albums' | 'tracks' | 'artists' | 'users';
-
-interface Artist {
-  id: string;
-  name: string;
-  images?: { url: string }[];
-}
-
-interface AppUser {
-  _id: string;
-  displayName: string;
-  email?: string;
-  profileImage?: string;
-  username?: string;
-}
-
-const SearchScreen = () => {
+export default function SearchV2Screen({ navigation }: any) {
   const { accessToken } = useAuth();
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const theme = useTheme();
   const [query, setQuery] = useState('');
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [artists, setArtists] = useState<Artist[]>([]);
-  const [users, setUsers] = useState<AppUser[]>([]);
+  const [tab, setTab] = useState<SearchTab>('tracks');
+  const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('all');
-
-  // Support opening with an initial query (from credits chips etc.)
-  useEffect(() => {
-    const params = (route?.params || {}) as { initialQuery?: string; initialFilter?: FilterType };
-    if (params.initialQuery) {
-      setQuery(params.initialQuery);
-      if (params.initialFilter) setFilter(params.initialFilter);
-      // Trigger search shortly after state updates
-      const t = setTimeout(() => handleSearch(), 50);
-      return () => clearTimeout(t);
-    }
-  }, [route?.params]);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
   useEffect(() => {
-    if (query.trim().length >= 2) {
-      const timer = setTimeout(() => {
-        handleSearch();
-      }, 300);
-      return () => clearTimeout(timer);
-    } else {
-      setAlbums([]);
-      setTracks([]);
-    }
+    const timer = setTimeout(() => setDebouncedQuery(query), 400);
+    return () => clearTimeout(timer);
   }, [query]);
 
-  const handleSearch = async () => {
-    if (!accessToken || !query.trim()) return;
-
+  const performSearch = useCallback(async () => {
+    if (!debouncedQuery.trim() || !accessToken) {
+      setResults([]);
+      return;
+    }
     setLoading(true);
     try {
-      const wantAlbums = filter === 'all' || filter === 'albums';
-      const wantTracks = filter === 'all' || filter === 'tracks';
-      const wantArtists = filter === 'all' || filter === 'artists';
-      const wantUsers = filter === 'users';
-
-      const types = [
-        wantAlbums ? 'album' : null,
-        wantTracks ? 'track' : null,
-        wantArtists ? 'artist' : null,
-      ].filter(Boolean).join(',') || 'track,album';
-
-      const data = await searchMusic(accessToken, query, types);
-      const albumItems: Album[] = wantAlbums ? (data?.albums?.items || []) : [];
-      const trackItems: Track[] = wantTracks ? (data?.tracks?.items || []) : [];
-      const artistItems: Artist[] = wantArtists ? (data?.artists?.items || []) : [];
-      setArtists(artistItems);
-      setUsers([]);
-      if (wantUsers) {
-        try {
-          const res = await searchUsers(query, 20);
-          setUsers(res || []);
-        } catch (e) {
-          setUsers([]);
-        }
+      if (tab === 'users') {
+        const data = await searchUsersOptimized(debouncedQuery, 1, 50);
+        setResults(data.results || []);
+      } else {
+        const data = await searchMusic(accessToken || '', debouncedQuery, tab);
+        setResults(tab === 'tracks' ? (data.tracks?.items || []) : (data.albums?.items || []));
       }
-      setAlbums(albumItems);
-      setTracks(trackItems);
-    } catch (error) {
-      console.error('Search error:', error);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Search failed:', err);
+      setResults([]);
     }
-  };
+    setLoading(false);
+  }, [debouncedQuery, tab, accessToken]);
 
-  const renderAlbum = ({ item }: { item: Album }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() =>
-        navigation.navigate(
-          'AddReview' as never,
-          { itemType: 'album', album: { id: item.id, name: item.name, images: item.images, artists: item.artists } } as never
-        )
-      }
-    >
-      <Image
-        source={{ uri: item.images?.[0]?.url || '' }}
-        style={styles.albumArt}
-      />
-      <View style={styles.itemInfo}>
-        <Text style={styles.badge}>{item.album_type?.toUpperCase() || 'ALBUM'}</Text>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.name || 'Unknown Album'}
-        </Text>
-        <Text style={styles.artistName} numberOfLines={1}>
-          {item.artists?.map((a) => a.name).join(', ') || 'Unknown Artist'}
-        </Text>
-      </View>
-      <Text style={styles.addButton}>+</Text>
-    </TouchableOpacity>
-  );
+  useEffect(() => { performSearch(); }, [performSearch]);
 
-  const renderTrack = ({ item }: { item: Track }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() =>
-        navigation.navigate(
-          'AddReview' as never,
-          { itemType: 'track', track: item } as never
-        )
-      }
-    >
-      <Image
-        source={{ uri: item.album?.images?.[0]?.url || '' }}
-        style={styles.albumArt}
-      />
-      <View style={styles.itemInfo}>
-        <Text style={styles.badge}>TRACK</Text>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.name || 'Unknown Track'}
-        </Text>
-        <Text style={styles.artistName} numberOfLines={1}>
-          {item.artists?.map((a) => a.name).join(', ') || 'Unknown Artist'}
-        </Text>
-        <Text style={styles.albumName} numberOfLines={1}>
-          {item.album?.name || 'Unknown Album'}
-        </Text>
-      </View>
-      <Text style={styles.addButton}>+</Text>
-    </TouchableOpacity>
-  );
-
-  const renderArtist = ({ item }: { item: Artist }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() => navigation.navigate('Artist' as never, { artistId: item.id, q: item.name } as never)}
-    >
-      {item.images?.[0]?.url ? (
-        <Image source={{ uri: item.images[0].url }} style={[styles.albumArt, { borderRadius: 30 }]} />
-      ) : (
-        <View style={[styles.albumArt, { borderRadius: 30, backgroundColor: '#3E3E3E', alignItems: 'center', justifyContent: 'center' }]}>
-          <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{item.name.charAt(0).toUpperCase()}</Text>
-        </View>
-      )}
-      <View style={styles.itemInfo}>
-        <Text style={styles.badge}>ARTIST</Text>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.name}
-        </Text>
-      </View>
-      <Text style={styles.addButton}>→</Text>
-    </TouchableOpacity>
-  );
-
-  const renderUser = ({ item }: { item: AppUser }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() => navigation.navigate('Profile' as never, { userId: item._id } as never)}
-    >
-      {item.profileImage ? (
-        <Image source={{ uri: item.profileImage }} style={[styles.albumArt, { borderRadius: 30 }]} />
-      ) : (
-        <View style={[styles.albumArt, { borderRadius: 30, backgroundColor: '#3E3E3E', alignItems: 'center', justifyContent: 'center' }]}>
-          <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{item.displayName?.charAt(0)?.toUpperCase() || 'U'}</Text>
-        </View>
-      )}
-      <View style={styles.itemInfo}>
-        <Text style={styles.badge}>USER</Text>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.displayName}
-        </Text>
-        {!!item.username && (
-          <Text style={styles.artistName} numberOfLines={1}>@{item.username}</Text>
+  const renderTrack = ({ item }: any) => (
+      <View style={styles.resultCard}>
+        {item.album?.images?.[0]?.url && (
+          <Avatar.Image size={56} source={{ uri: item.album.images[0].url }} style={{ borderRadius: 8 }} />
         )}
+        <View style={{ flex: 1 }}>
+          <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '600' }}>{item.name}</Text>
+          <Text variant="bodyMedium" numberOfLines={1} style={{ opacity: 0.7, marginTop: 4 }}>
+            {item.artists?.map((a: any) => a.name).join(', ')}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.addButton}>→</Text>
-    </TouchableOpacity>
   );
 
-  const sections = [
-    ...((filter === 'all' || filter === 'albums') && albums.length > 0
-      ? [{ title: 'Albums', data: albums, renderItem: renderAlbum }]
-      : []),
-    ...((filter === 'all' || filter === 'tracks') && tracks.length > 0
-      ? [{ title: 'Tracks', data: tracks, renderItem: renderTrack }]
-      : []),
-    ...((filter === 'all' || filter === 'artists') && artists.length > 0
-      ? [{ title: 'Artists', data: artists, renderItem: renderArtist }]
-      : []),
-    ...(filter === 'users' && users.length > 0
-      ? [{ title: 'Users', data: users, renderItem: renderUser }]
-      : []),
-  ];
+  const renderAlbum = ({ item }: any) => (
+      <Pressable onPress={() => navigation.navigate('AlbumDetail', { albumId: item.id, albumName: item.name })}>
+        <View style={styles.resultCard}>
+          {item.images?.[0]?.url && (
+            <Avatar.Image size={56} source={{ uri: item.images[0].url }} style={{ borderRadius: 8 }} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '600' }}>{item.name}</Text>
+            <Text variant="bodyMedium" numberOfLines={1} style={{ opacity: 0.7, marginTop: 4 }}>
+              {item.artists?.map((a: any) => a.name).join(', ')}
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+  );
+
+  const renderUser = ({ item }: any) => (
+      <Pressable onPress={() => navigation.navigate('Profile', { userId: item._id })}>
+        <View style={styles.resultCard}>
+          <Avatar.Text size={56} label={(item.displayName || item.username || 'U').charAt(0).toUpperCase()} />
+          <View style={{ flex: 1 }}>
+            <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '600' }}>{item.displayName}</Text>
+            <Text variant="bodyMedium" numberOfLines={1} style={{ opacity: 0.7, marginTop: 4 }}>
+              @{item.username || 'user'}
+            </Text>
+          </View>
+          <RSButton mode="outlined" compact style={{ minHeight: 48 }}>Follow</RSButton>
+        </View>
+      </Pressable>
+  );
+
+  const renderItem = tab === 'tracks' ? renderTrack : tab === 'albums' ? renderAlbum : renderUser;
 
   return (
-    <SafeAreaView style={styles.safeContainer} edges={['top']}>
-      <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search tracks, albums, artists, or users"
-          placeholderTextColor="#B3B3B3"
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Appbar.Header mode="center-aligned" style={{ backgroundColor: theme.colors.surface }}>
+          <Appbar.Content title="Search" titleStyle={{ fontWeight: '600' }} />
+      </Appbar.Header>
+
+      <View style={styles.searchBar}>
+        <Searchbar
+          placeholder="Search tracks, albums, users..."
           value={query}
           onChangeText={setQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
         />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtersRow}
-        >
-          {(['all','albums','tracks','artists','users'] as FilterType[]).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
-                {f === 'all' ? 'All' : f === 'albums' ? 'Albums' : f === 'tracks' ? 'Tracks' : f === 'artists' ? 'Artists' : 'Users'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
       </View>
+
+      <SegmentedButtons
+        value={tab}
+        onValueChange={(v) => setTab(v as SearchTab)}
+        buttons={[
+          { value: 'tracks', label: 'Tracks' },
+          { value: 'albums', label: 'Albums' },
+          { value: 'users', label: 'Users' },
+        ]}
+        style={styles.tabs}
+      />
 
       {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1DB954" />
+        <View style={{ padding: 16, gap: 12 }}>
+          <SkeletonLine height={72} style={{ borderRadius: 12 }} />
+          <SkeletonLine height={72} style={{ borderRadius: 12 }} />
+          <SkeletonLine height={72} style={{ borderRadius: 12 }} />
         </View>
       )}
 
-      {!loading && query.trim().length >= 2 && sections.length === 0 && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No results found</Text>
-        </View>
-      )}
-      {!loading && query.trim().length < 2 && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Type at least 2 characters to search</Text>
+      {!loading && results.length === 0 && debouncedQuery.trim() && (
+        <View style={styles.empty}>
+          <Text variant="displaySmall" style={{ fontSize: 48, marginBottom: 8 }}>😔</Text>
+          <Text variant="titleLarge" style={{ fontWeight: '600', marginBottom: 8 }}>No results</Text>
+          <Text variant="bodyMedium" style={{ opacity: 0.6, textAlign: 'center' }}>
+            Try a different search term
+          </Text>
         </View>
       )}
 
-      {!loading && (
-        <SectionList
-          sections={sections as any}
-          keyExtractor={(item: any, index) => item.id + index}
-          renderSectionHeader={({ section: { title } }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{title}</Text>
-            </View>
-          )}
-          contentContainerStyle={styles.listContainer}
-          stickySectionHeadersEnabled={false}
+      {!loading && !debouncedQuery.trim() && (
+        <View style={styles.empty}>
+          <Text variant="displaySmall" style={{ fontSize: 48, marginBottom: 8 }}>🔍</Text>
+          <Text variant="titleLarge" style={{ fontWeight: '600', marginBottom: 8 }}>Search music & friends</Text>
+          <Text variant="bodyMedium" style={{ opacity: 0.6, textAlign: 'center' }}>
+            Find tracks, albums, and users
+          </Text>
+        </View>
+      )}
+
+      {!loading && results.length > 0 && (
+        <FlatList
+          data={results}
+          renderItem={renderItem}
+          keyExtractor={(item, idx) => item.id || item._id || `${tab}-${idx}`}
+          contentContainerStyle={{ padding: 16, paddingBottom: 80, gap: 12 }}
         />
       )}
-      </View>
-    </SafeAreaView>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  safeContainer: {
-    flex: 1,
-    backgroundColor: '#191414',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#191414',
-  },
-  searchContainer: {
-    padding: 15,
-    backgroundColor: '#282828',
-  },
-  searchInput: {
-    backgroundColor: '#3E3E3E',
-    color: '#FFFFFF',
-    padding: 15,
-    borderRadius: 25,
-    fontSize: 16,
-  },
-  filtersRow: {
+  container: { flex: 1 },
+  searchBar: { paddingHorizontal: 16, paddingVertical: 8 },
+  tabs: { marginHorizontal: 16, marginBottom: 12 },
+  resultCard: {
     flexDirection: 'row',
-    marginTop: 10,
-    paddingHorizontal: 4,
-  },
-  filterChip: {
-    backgroundColor: '#3E3E3E',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  filterChipActive: {
-    backgroundColor: '#1DB954',
-  },
-  filterChipText: {
-    color: '#B3B3B3',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  sectionHeader: {
-    backgroundColor: '#191414',
-    padding: 15,
-    paddingBottom: 10,
-  },
-  sectionTitle: {
-    color: '#1DB954',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  itemCard: {
-    flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#282828',
-    marginHorizontal: 15,
-    marginBottom: 10,
-    borderRadius: 10,
     alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    minHeight: 48,
   },
-  albumArt: {
-    width: 60,
-    height: 60,
-    borderRadius: 5,
-    marginRight: 15,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  badge: {
-    color: '#1DB954',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginBottom: 3,
-  },
-  itemName: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 3,
-  },
-  artistName: {
-    color: '#B3B3B3',
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  albumName: {
-    color: '#666',
-    fontSize: 12,
-  },
-  addButton: {
-    color: '#1DB954',
-    fontSize: 30,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  loadingContainer: {
+  empty: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#B3B3B3',
-    fontSize: 16,
-  },
-  listContainer: {
-    paddingBottom: 20,
+    paddingHorizontal: 32,
   },
 });
-
-export default SearchScreen;

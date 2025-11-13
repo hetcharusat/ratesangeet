@@ -76,22 +76,18 @@ export default function LoginScreen() {
   // Generate redirect URI based on platform and environment
   const getRedirectUri = (): string => {
     if (Platform.OS === 'web') {
-      // On web, ALWAYS use localhost for WebCrypto API compatibility
-      // Browser security requires localhost or HTTPS for crypto operations
+      // On web, use 127.0.0.1 (Spotify REQUIRES explicit IPv4, NOT "localhost")
+      // Spotify docs: "localhost is not allowed as redirect URI"
+      // https://developer.spotify.com/documentation/web-api/concepts/redirect_uri
       if (typeof window !== 'undefined') {
-        const origin = window.location.origin;
-        console.log('🔗 Web redirect URI:', origin);
-        
-        // If accessed via LAN IP, warn and use localhost
-        if (origin.includes('192.168') || origin.includes('10.0')) {
-          console.warn('⚠️ Accessed via LAN IP - using localhost for redirect');
-          return `http://localhost:${window.location.port || '8081'}`;
-        }
-        
-        return origin;
+        const port = window.location.port || '8081';
+        // ALWAYS use 127.0.0.1 (Spotify requirement)
+        const redirectUri = `http://127.0.0.1:${port}`;
+        console.log('🔗 Web redirect URI:', redirectUri);
+        return redirectUri;
       }
-      // Fallback to localhost
-      return 'http://localhost:8081';
+      // Fallback
+      return 'http://127.0.0.1:8081';
     } else {
       // Mobile uses custom scheme
       return 'ratesangeet://callback';
@@ -120,12 +116,12 @@ export default function LoginScreen() {
           try {
             console.log('🔑 Exchanging code with server...');
             
-            // Retrieve codeVerifier from sessionStorage
-            const codeVerifier = sessionStorage.getItem('spotify_code_verifier');
-            const redirectUri = sessionStorage.getItem('spotify_redirect_uri');
+            // Retrieve codeVerifier from localStorage (per Spotify docs)
+            const codeVerifier = localStorage.getItem('spotify_code_verifier');
+            const redirectUri = localStorage.getItem('spotify_redirect_uri');
             
             if (!codeVerifier) {
-              throw new Error('Code verifier missing from session');
+              throw new Error('Code verifier missing from storage');
             }
             
             // Exchange code for tokens via server
@@ -155,9 +151,9 @@ export default function LoginScreen() {
               console.log('✅ Auth stored, user logged in');
               
               // Clean up
-              sessionStorage.removeItem('spotify_code_verifier');
-              sessionStorage.removeItem('spotify_redirect_uri');
-              sessionStorage.removeItem('spotify_state');
+              localStorage.removeItem('spotify_code_verifier');
+              localStorage.removeItem('spotify_redirect_uri');
+              localStorage.removeItem('spotify_state');
               window.history.replaceState({}, document.title, '/');
             } else {
               console.error('❌ Login failed:', data.error || 'Unknown error');
@@ -267,10 +263,10 @@ export default function LoginScreen() {
         const codeChallenge = await generateCodeChallenge(codeVerifier);
         const state = Math.random().toString(36).substring(7);
         
-        // Store PKCE parameters in sessionStorage
-        sessionStorage.setItem('spotify_code_verifier', codeVerifier);
-        sessionStorage.setItem('spotify_redirect_uri', redirectUri);
-        sessionStorage.setItem('spotify_state', state);
+        // Store PKCE parameters in localStorage (per Spotify docs)
+        localStorage.setItem('spotify_code_verifier', codeVerifier);
+        localStorage.setItem('spotify_redirect_uri', redirectUri);
+        localStorage.setItem('spotify_state', state);
         
         // Build Spotify authorization URL
         const params = new URLSearchParams({

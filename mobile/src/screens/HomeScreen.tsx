@@ -1,817 +1,325 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, Image, RefreshControl, TouchableOpacity, Animated } from 'react-native';
+import { Appbar, Text, useTheme, Card, IconButton, FAB } from 'react-native-paper';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../context/AuthContext';
-import { getUserReviews, getUserStats, getListeningStats, Review, ListeningStats } from '../services/api';
-import { useScrobble } from '../context/ScrobbleContext';
-import { useNavigation } from '@react-navigation/native';
-import { BarChart } from 'react-native-chart-kit';
-import type { StackNavigationProp } from '@react-navigation/stack';
-import { retryWithBackoff } from '../utils/async';
-import Colors from '../theme/colors';
+import { getListeningStats, getCurrentlyPlaying } from '../services/api';
+import SkeletonLine from '../components/ui/SkeletonLine';
 
-type RootStackParamList = {
-  MainTabs: undefined;
-  AddReview: { track?: any; album?: any };
-  ReviewDetail: { review: Review };
+type StatsSummary = {
+  totalMinutes?: number;
+  totalScrobbles?: number;
+  uniqueArtistsCount?: number;
+  totalReviews?: number;
 };
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
-
-// Skeleton loading component
-const SkeletonBox = () => {
-  const pulseAnim = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  const opacity = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0.7],
-  });
-
-  return (
-    <Animated.View style={[styles.skeletonBox, { opacity }]} />
-  );
+type CurrentTrack = {
+  id: string;
+  name: string;
+  artists: { name: string }[];
+  album: {
+    name: string;
+    images: { url: string }[];
+  };
 };
 
-const HomeScreen = () => {
-  const { user, logout, accessToken } = useAuth();
-  const { currentTrack, lastScrobble, isPolling } = useScrobble();
-  const navigation = useNavigation<NavigationProp>();
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [stats, setStats] = useState({ totalReviews: 0 });
-  const [listeningStats, setListeningStats] = useState<ListeningStats | null>(null);
+export default function HomeScreen({ navigation }: any) {
+  const { user, accessToken } = useAuth();
+  const theme = useTheme();
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<StatsSummary>({});
+  const [currentTrack, setCurrentTrack] = useState<CurrentTrack | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const scrollY = new Animated.Value(0);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async (opts?: { force?: boolean }) => {
+  const fetchData = async () => {
+    if (!user?.id || !accessToken) {
+      console.log('[HOME] Missing user or token, skipping data fetch');
+      setLoading(false);
+      return;
+    }
+    
     try {
-      if (user?.id) {
-        // Add timeout wrapper for each call (10 seconds max)
-        const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T | null> => {
-          return Promise.race([
-            promise,
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
-          ]);
-        };
+      // Fetch stats
+      const statsRes = await getListeningStats(user.id, accessToken);
+      setStats({
+        totalScrobbles: statsRes.totalScrobbles || 0,
+        totalMinutes: statsRes.totalMinutes || 0,
+        uniqueArtistsCount: statsRes.uniqueArtistsCount || 0,
+        totalReviews: 0, // Will be fetched from reviews API later
+      });
 
-        const [reviewsData, statsData, listeningStatsData] = await Promise.all([
-          withTimeout(retryWithBackoff(() => getUserReviews(user.id))),
-          withTimeout(retryWithBackoff(() => getUserStats(user.id))),
-          withTimeout(retryWithBackoff(() => getListeningStats(user.id, accessToken || undefined, { force: opts?.force }))).catch(err => {
-            // Silent error - data will be null
-            return null;
-          }),
-        ]);
-        
-        setReviews(reviewsData || []);
-        setStats({ totalReviews: statsData?.totalReviews || 0 });
-        setListeningStats(listeningStatsData || null);
+      // Fetch currently playing
+      try {
+        const nowPlaying = await getCurrentlyPlaying(accessToken);
+        if (nowPlaying.isPlaying && nowPlaying.track) {
+          setCurrentTrack(nowPlaying.track);
+          setIsPlaying(true);
+        } else {
+          setCurrentTrack(null);
+          setIsPlaying(false);
+        }
+      } catch (err) {
+        console.log('[HOME] Not playing anything currently');
+        setCurrentTrack(null);
+        setIsPlaying(false);
       }
     } catch (error) {
-      // Silent error handling - set defaults
-      setReviews([]);
-      setStats({ totalReviews: 0 });
-      setListeningStats(null);
+      console.error('[HOME] Error fetching data:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
+  useEffect(() => {
+    fetchData();
+  }, [user?.id]);
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    // Force bypass cache when user manually pulls to refresh
-    loadData({ force: true });
+    await fetchData();
+    setRefreshing(false);
   };
 
-  const handleRateNowPlaying = () => {
-    const track = currentTrack ?? (lastScrobble ? {
-      id: lastScrobble.spotifyId,
-      name: lastScrobble.trackName,
-      artists: lastScrobble.artistName.split(', ').map((name) => ({ name })),
-      album: {
-        name: lastScrobble.albumName ?? '',
-        images: lastScrobble.albumArt ? [{ url: lastScrobble.albumArt }] : [],
-      },
-    } : null);
-
-    if (track) {
-      (navigation as any).navigate('AddReview', { itemType: 'track', track });
-    }
+  const formatTime = (minutes?: number) => {
+    if (!minutes) return '0h 0m';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h ${m}m`;
   };
 
-  const renderReview = ({ item }: { item: Review }) => (
-    <TouchableOpacity 
-      style={styles.reviewCard}
-      onPress={() => navigation.navigate('ReviewDetail', { review: item })}
-    >
-      {item.albumArt && (
-        <Image source={{ uri: item.albumArt }} style={styles.albumArt} />
-      )}
-      <View style={styles.reviewInfo}>
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.itemName || 'Unknown Track'}
-        </Text>
-        <Text style={styles.artistName} numberOfLines={1}>
-          {item.artistName || 'Unknown Artist'}
-        </Text>
-        <View style={styles.ratingContainer}>
-          <Text style={styles.rating}>⭐ {item.rating || 0}/5</Text>
-          <Text style={styles.date}>
-            {item.listeningDate ? new Date(item.listeningDate).toLocaleDateString() : 'N/A'}
-          </Text>
-        </View>
-        {item.reviewText && (
-          <Text style={styles.reviewText} numberOfLines={2}>
-            {item.reviewText}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+  const formatNumber = (num?: number) => {
+    if (!num) return '0';
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+    return num.toString();
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#121212" />
-      <ScrollView 
-        style={styles.container} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1DB954" />
-        }
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Custom App Bar */}
+      <Appbar.Header elevated mode="center-aligned" style={{ backgroundColor: theme.colors.surface }}>
+        <View style={styles.appbarContent}>
+          <View style={styles.appbarLeft}>
+            <Image
+              source={{ uri: user?.profileImage || 'https://ui-avatars.com/api/?name=' + (user?.displayName || 'User') }}
+              style={styles.avatar}
+            />
+          </View>
+          <Text variant="titleLarge" style={styles.appbarTitle}>
+            Hi, {user?.displayName?.split(' ')[0] || 'User'}
+          </Text>
+          <View style={{ width: 48 }} />
+        </View>
+      </Appbar.Header>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.displayName || 'User'}</Text>
-        </View>
-        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Stats Cards with Skeleton Loading */}
-      {loading ? (
-        <View style={styles.statsContainer}>
-          <View style={[styles.statCard, styles.statCardLeft]}>
-            <View style={[styles.skeletonBox, { height: 40, width: 60 }]} />
-            <View style={[styles.skeletonTextContainer, { height: 16, width: 70 }]} />
+        {/* Stats Grid - 2x2 */}
+        {loading ? (
+          <View style={styles.statsGrid}>
+            {[1, 2, 3, 4].map((i) => (
+              <SkeletonLine key={i} width="48%" height={100} style={{ borderRadius: 16 }} />
+            ))}
           </View>
-          <View style={[styles.statCard, styles.statCardRight]}>
-            <View style={[styles.skeletonBox, { height: 40, width: 60 }]} />
-            <View style={[styles.skeletonTextContainer, { height: 16, width: 70 }]} />
-          </View>
-          <View style={[styles.statCard, styles.statCardLeft]}>
-            <View style={[styles.skeletonBox, { height: 40, width: 60 }]} />
-            <View style={[styles.skeletonTextContainer, { height: 16, width: 70 }]} />
-          </View>
-          <View style={[styles.statCard, styles.statCardRight]}>
-            <View style={[styles.skeletonBox, { height: 40, width: 60 }]} />
-            <View style={[styles.skeletonTextContainer, { height: 16, width: 70 }]} />
-          </View>
-        </View>
-      ) : (
-        <View style={styles.statsContainer}>
-          <View style={[styles.statCard, styles.statCardLeft]}>
-            <Text style={styles.statValue}>{stats.totalReviews || 0}</Text>
-            <Text style={styles.statLabel}>Reviews</Text>
-          </View>
-          {listeningStats && (
-            <>
-              <View style={[styles.statCard, styles.statCardRight]}>
-                <Text style={styles.statValue}>{listeningStats.totalMinutes}</Text>
-                <Text style={styles.statLabel}>Minutes</Text>
-              </View>
-              <View style={[styles.statCard, styles.statCardLeft]}>
-                <Text style={styles.statValue}>{listeningStats.totalScrobbles}</Text>
-                <Text style={styles.statLabel}>Tracks</Text>
-              </View>
-              <View style={[styles.statCard, styles.statCardRight]}>
-                <Text style={styles.statValue}>
-                  {listeningStats.uniqueArtistsCount || listeningStats.topArtists?.length || 0}
-                </Text>
-                <Text style={styles.statLabel}>Artists</Text>
-              </View>
-              {(listeningStats as any)?.cache && (
-                <View style={styles.cacheMetaContainer}>
-                  <Text style={styles.cacheMetaText} numberOfLines={1}>
-                    {(listeningStats as any).cache.hit ? 'Cached' : 'Fresh'} · Updated {new Date((listeningStats as any).cache.generatedAt).toLocaleTimeString()} {(listeningStats as any).cache.forced ? '(forced)' : ''}
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Now Playing / Last Scrobble Card */}
-      {(currentTrack || lastScrobble) && (
-        <View style={styles.nowPlayingCard}>
-          <View style={styles.nowPlayingHeader}>
-            <Text style={styles.nowPlayingTitle}>{currentTrack ? 'Now Playing' : 'Last Scrobble'}</Text>
-            {isPolling && <Text style={styles.scrobbleStatus}>Scrobbling…</Text>}
-          </View>
-          <View style={styles.nowPlayingContent}>
-            {((currentTrack && currentTrack.album?.images?.[0]?.url) || lastScrobble?.albumArt) && (
-              <Image
-                source={{ uri: currentTrack?.album?.images?.[0]?.url ?? lastScrobble?.albumArt ?? '' }}
-                style={styles.nowPlayingArt}
-              />
-            )}
-            <View style={styles.nowPlayingInfo}>
-              <Text style={styles.nowPlayingName} numberOfLines={1}>
-                {currentTrack?.name ?? lastScrobble?.trackName ?? 'Unknown Track'}
+        ) : (
+          <View style={styles.statsGrid}>
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: theme.colors.surfaceVariant }]}
+              onPress={() => navigation.navigate('History')}
+              activeOpacity={0.7}
+            >
+              <Text variant="bodyLarge" style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>
+                Scrobbles
               </Text>
-              <Text style={styles.nowPlayingArtist} numberOfLines={1}>
-                {currentTrack
-                  ? currentTrack.artists.map((a) => a.name).join(', ')
-                  : lastScrobble?.artistName ?? 'Unknown Artist'}
+              <Text variant="displayMedium" style={[styles.statValue, { color: theme.colors.onSurface }]}>
+                {formatNumber(stats.totalScrobbles)}
               </Text>
-              {lastScrobble && !currentTrack && (
-                <Text style={styles.scrobbleTime}>
-                  {new Date(lastScrobble.playedAt).toLocaleString()}
-                </Text>
-              )}
-            </View>
-            <TouchableOpacity style={styles.rateButton} onPress={handleRateNowPlaying}>
-              <Text style={styles.rateButtonText}>Rate</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: theme.colors.surfaceVariant }]}
+              onPress={() => navigation.navigate('Discovery')}
+              activeOpacity={0.7}
+            >
+              <Text variant="bodyLarge" style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>
+                Artists
+              </Text>
+              <Text variant="displayMedium" style={[styles.statValue, { color: theme.colors.onSurface }]}>
+                {formatNumber(stats.uniqueArtistsCount)}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: theme.colors.surfaceVariant }]}
+              onPress={() => navigation.navigate('Profile')}
+              activeOpacity={0.7}
+            >
+              <Text variant="bodyLarge" style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>
+                Reviews
+              </Text>
+              <Text variant="displayMedium" style={[styles.statValue, { color: theme.colors.onSurface }]}>
+                {formatNumber(stats.totalReviews)}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: theme.colors.surfaceVariant }]}
+              activeOpacity={0.7}
+            >
+              <Text variant="bodyLarge" style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>
+                Time
+              </Text>
+              <Text variant="displayMedium" style={[styles.statValue, { color: theme.colors.onSurface }]}>
+                {formatTime(stats.totalMinutes)}
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      )}
+        )}
 
-      {listeningStats && listeningStats.topAlbums.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>Top Albums</Text>
-          <BarChart
-            data={{
-              labels: listeningStats.topAlbums.map((album) => 
-                album.name.length > 15 ? album.name.substring(0, 15) + '...' : album.name
-              ),
-              datasets: [{
-                data: listeningStats.topAlbums.map((album) => album.count),
-              }],
-            }}
-            width={Dimensions.get('window').width - 40}
-            height={220}
-            yAxisLabel=""
-            yAxisSuffix=" plays"
-            chartConfig={{
-              backgroundColor: '#1F1F1F',
-              backgroundGradientFrom: '#1F1F1F',
-              backgroundGradientTo: '#282828',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(29, 185, 84, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-              style: {
-                borderRadius: 16,
-              },
-              propsForLabels: {
-                fontSize: 10,
-              },
-            }}
-            style={styles.chart}
-            fromZero
-            showBarTops={false}
-            showValuesOnTopOfBars
-          />
-          <View style={styles.albumsList}>
-            {listeningStats.topAlbums.map((album, index) => (
-              <TouchableOpacity 
-                key={index} 
-                style={styles.albumItem}
-                onPress={() => {
-                  // Navigate to search or open in Spotify if we had album ID
-                }}
-                activeOpacity={0.7}
-              >
-                {album.albumArt && (
-                  <Image source={{ uri: album.albumArt }} style={styles.albumItemArt} />
-                )}
-                <View style={styles.albumItemInfo}>
-                  <Text style={styles.albumItemName} numberOfLines={1}>
-                    {album.name}
+        {/* Currently Playing - Only show if playing */}
+        {isPlaying && currentTrack && (
+          <Card style={[styles.nowPlayingCard, { backgroundColor: theme.colors.surfaceVariant }]} mode="contained">
+            <Card.Content style={styles.nowPlayingContent}>
+              <View style={styles.nowPlayingLeft}>
+                <Image
+                  source={{ uri: currentTrack.album.images[0]?.url || 'https://via.placeholder.com/64' }}
+                  style={styles.albumCover}
+                />
+                <View style={styles.trackInfo}>
+                  <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>
+                    {currentTrack.name}
                   </Text>
-                  <Text style={styles.albumItemArtist} numberOfLines={1}>
-                    {album.artist}
-                  </Text>
-                  <Text style={styles.albumItemMeta} numberOfLines={1}>
-                    {album.count} scrobbles
+                  <Text variant="bodySmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>
+                    {currentTrack.artists.map(a => a.name).join(', ')}
                   </Text>
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Recent Album Completions List */}
-      {listeningStats?.albumCompletions?.recentCompletions?.length ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Completions</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-            {listeningStats.albumCompletions.recentCompletions.slice(0,10).map((c, idx) => (
-              <View key={idx} style={styles.completionPill}>
-                {c.albumArt ? <Image source={{ uri: c.albumArt }} style={styles.completionArt} /> : <View style={[styles.completionArt, styles.completionArtPlaceholder]} />}
-                <Text style={styles.completionName} numberOfLines={1}>{c.albumName}</Text>
-                <Text style={styles.completionArtist} numberOfLines={1}>{c.artistName}</Text>
-                <Text style={styles.completionMeta} numberOfLines={1}>{c.completedPlays || 1}× full play</Text>
               </View>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {listeningStats && listeningStats.topArtists && listeningStats.topArtists.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle} numberOfLines={1}>Top Artists</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-            {(listeningStats.topArtists || []).map((a, idx) => (
-              <TouchableOpacity 
-                key={idx} 
-                style={[styles.artistPill, { backgroundColor: ['#1DB954','#FF6B6B','#4ECDC4','#FFD93D','#A78BFA'][idx] || '#1DB954' }]}
-                onPress={() => navigation.navigate('Artist' as any, { q: a.artist })}
-              >
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>{idx + 1}</Text>
-                </View>
-                <Text style={styles.artistNameText} numberOfLines={1}>{a.artist}</Text>
-                <Text style={styles.artistCount}>{a.count}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle} numberOfLines={1}>Your Reviews</Text>
-      </View>
-
-      <FlatList
-        data={reviews}
-        renderItem={renderReview}
-        scrollEnabled={false}
-        keyExtractor={(item) => item._id}
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No reviews yet</Text>
-            <Text style={styles.emptySubtext}>
-              Start tracking your music by adding reviews
-            </Text>
-          </View>
-        }
-      />
+              <IconButton
+                icon="star-outline"
+                size={24}
+                iconColor={theme.colors.primary}
+                onPress={() => {
+                  // Navigate to rate/review screen
+                  navigation.navigate('AlbumDetail', { albumId: currentTrack.album });
+                }}
+                style={styles.rateButton}
+              />
+            </Card.Content>
+          </Card>
+        )}
       </ScrollView>
-    </SafeAreaView>
+
+      {/* Animated FAB for Search */}
+      <FAB
+        icon="magnify"
+        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
+        color={theme.colors.onPrimaryContainer}
+        onPress={() => navigation.navigate('Search')}
+        animated
+      />
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
-  // Sparkline styles
-  sparklineRow: {
+  appbarContent: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 2,
-    marginTop: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-  },
-  sparkBar: {
-    width: 6,
-    backgroundColor: Colors.primary,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-  },
-  sparklineMeta: {
-    marginTop: 8,
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  // Recent completions pills
-  completionPill: {
-    width: 120,
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
-    padding: 10,
-    marginRight: 10,
     alignItems: 'center',
-  },
-  completionArt: {
-    width: 80,
-    height: 80,
-    borderRadius: 6,
-    marginBottom: 6,
-    backgroundColor: Colors.placeholder,
-  },
-  completionArtPlaceholder: {
-    backgroundColor: Colors.placeholder,
-  },
-  completionName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  completionArtist: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  completionMeta: {
-    fontSize: 11,
-    color: Colors.primary,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  header: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
+    flex: 1,
+    paddingHorizontal: 4,
+  },
+  appbarLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
+    gap: 12,
   },
-  greeting: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+  appbarTitle: {
+    fontWeight: '700',
+    fontSize: 20,
+    flex: 1,
+    textAlign: 'center',
   },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
-  logoutButton: {
-    padding: 10,
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
   },
-  logoutText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  statsContainer: {
+  statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    gap: 12,
+    marginBottom: 20,
   },
   statCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 100,
-    width: '48%',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  statCardLeft: {
-    marginRight: '4%',
-  },
-  statCardRight: {
-    marginRight: 0,
-  },
-  statBox: {
     flex: 1,
-    backgroundColor: Colors.surface,
-    padding: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: Colors.primary,
-    marginBottom: 4,
+    minWidth: '46%',
+    aspectRatio: 1,
+    padding: 16,
+    borderRadius: 16,
+    justifyContent: 'space-between',
+    elevation: 0,
   },
   statLabel: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '600',
+    fontSize: 16,
+    textAlign: 'left',
   },
-  skeletonBox: {
-    width: '100%',
-    height: 60,
-    backgroundColor: Colors.skeleton,
-    borderRadius: 12,
-  },
-  skeletonTextContainer: {
-    width: '100%',
-    height: 20,
-    backgroundColor: Colors.skeleton,
-    borderRadius: 6,
-    marginTop: 8,
-  },
-  sectionHeader: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    flexShrink: 1,
-    flexWrap: 'nowrap',
-    includeFontPadding: false,
+  statValue: {
+    fontWeight: '700',
+    fontSize: 36,
+    textAlign: 'left',
+    fontFamily: 'System', // Apple San Francisco on iOS
   },
   nowPlayingCard: {
-    marginHorizontal: 20,
-    marginBottom: 10,
-    backgroundColor: '#1F1F1F',
-    borderRadius: 12,
-    padding: 16,
-  },
-  nowPlayingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  nowPlayingTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  scrobbleStatus: {
-    color: '#1DB954',
-    fontSize: 12,
+    marginTop: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   nowPlayingContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  nowPlayingArt: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
-    marginRight: 14,
-  },
-  nowPlayingInfo: {
+  nowPlayingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+    gap: 12,
   },
-  nowPlayingName: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+  albumCover: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
   },
-  nowPlayingArtist: {
-    color: '#B3B3B3',
-    fontSize: 14,
-  },
-  scrobbleTime: {
-    marginTop: 6,
-    color: '#808080',
-    fontSize: 12,
+  trackInfo: {
+    flex: 1,
   },
   rateButton: {
-    backgroundColor: '#1DB954',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginLeft: 10,
+    margin: 0,
   },
-  rateButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  scrobbleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1F1F1F',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  scrobbleArt: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  scrobbleInfo: {
-    flex: 1,
-  },
-  scrobbleTrack: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 3,
-  },
-  scrobbleArtist: {
-    color: '#B3B3B3',
-    fontSize: 13,
-    marginBottom: 3,
-  },
-  listContainer: {
-    padding: 20,
-    paddingTop: 10,
-  },
-  reviewCard: {
-    flexDirection: 'row',
-    backgroundColor: '#282828',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-  },
-  albumArt: {
-    width: 80,
-    height: 80,
-    borderRadius: 5,
-    marginRight: 15,
-  },
-  reviewInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 5,
-    flexShrink: 1,
-  },
-  artistName: {
-    fontSize: 14,
-    color: '#B3B3B3',
-    marginBottom: 8,
-    flexShrink: 1,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  rating: {
-    fontSize: 14,
-    color: '#1DB954',
-    fontWeight: '600',
-  },
-  date: {
-    fontSize: 12,
-    color: '#B3B3B3',
-  },
-  reviewText: {
-    fontSize: 13,
-    color: '#B3B3B3',
-    marginTop: 5,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    marginBottom: 10,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#B3B3B3',
-    textAlign: 'center',
-  },
-  chart: {
-    marginVertical: 10,
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 100,
     borderRadius: 16,
-  },
-  genreTagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 10,
-  },
-  genreTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 6,
-  },
-  genreTagText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  genreTagCount: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    opacity: 0.9,
-  },
-  albumsList: {
-    marginTop: 10,
-  },
-  artistPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginRight: 10,
-    maxWidth: 220,
-  },
-  rankBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  rankText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  artistNameText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', flexShrink: 1 },
-  artistCount: { color: '#FFFFFF', fontSize: 12, marginLeft: 8, opacity: 0.9 },
-  albumItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1F1F1F',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  albumItemArt: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  albumItemInfo: {
-    flex: 1,
-  },
-  albumItemName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 3,
-  },
-  albumItemArtist: {
-    color: '#B3B3B3',
-    fontSize: 13,
-    marginBottom: 3,
-  },
-  albumItemMeta: {
-    color: '#B3B3B3',
-    fontSize: 12,
-  },
-  albumItemCount: {
-    color: '#1DB954',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cacheMetaContainer: {
-    marginTop: 8,
-    paddingHorizontal: 4,
-    width: '100%',
-  },
-  cacheMetaText: {
-    fontSize: 11,
-    color: '#888',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 });
-
-export default HomeScreen;

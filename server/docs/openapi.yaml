@@ -112,41 +112,127 @@ paths:
   /api/auth/callback:
     post:
       tags: [Auth]
-      summary: Exchange authorization code for tokens
-      description: Server-side or PKCE flow; returns tokens and user profile
+      summary: Exchange authorization code for tokens (PKCE)
+      description: |
+        **Production-Ready PKCE Flow (Per Spotify Official Docs)**
+        
+        Exchanges authorization code + code verifier for access/refresh tokens.
+        Supports both web (client-side PKCE) and mobile (expo-auth-session).
+        
+        **CRITICAL REQUIREMENTS:**
+        - `redirectUri` MUST be exact IPv4/IPv6 loopback (e.g., `http://127.0.0.1:8081`)
+        - Spotify FORBIDS `localhost` - use `127.0.0.1` instead
+        - `codeVerifier` MUST match original code challenge sent to Spotify
+        - Code expires after 10 minutes - exchange immediately
+        
+        **Reference:** https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [code]
+              required: [code, redirectUri]
               properties:
-                code: { type: string, description: 'Authorization code from Spotify' }
-                redirectUri: { type: string, description: 'Must match registered redirect URI' }
-                codeVerifier: { type: string, description: 'PKCE code verifier (for public clients)' }
-                target: { type: string, enum: [mobile, web] }
-            example:
-              code: 'AQB1_...'
-              redirectUri: 'com.ratesangeet://callback'
-              codeVerifier: 'abc123...'
-              target: 'mobile'
+                code: 
+                  type: string
+                  description: 'Authorization code from Spotify (expires in 10 min)'
+                  example: 'AQB1_kqPR9...'
+                redirectUri: 
+                  type: string
+                  description: 'MUST match registered redirect URI exactly (use 127.0.0.1, NOT localhost)'
+                  example: 'http://127.0.0.1:8081'
+                codeVerifier: 
+                  type: string
+                  description: 'PKCE code verifier (43-128 chars, base64url) - REQUIRED for web/mobile'
+                  example: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+                target: 
+                  type: string
+                  enum: [mobile, web]
+                  description: 'Platform identifier'
+                  example: 'web'
+            examples:
+              webPKCE:
+                summary: Web (PKCE)
+                value:
+                  code: 'AQB1_kqPR9...'
+                  redirectUri: 'http://127.0.0.1:8081'
+                  codeVerifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+                  target: 'web'
+              mobilePKCE:
+                summary: Mobile (PKCE)
+                value:
+                  code: 'AQB1_kqPR9...'
+                  redirectUri: 'ratesangeet://callback'
+                  codeVerifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+                  target: 'mobile'
       responses:
         '200':
-          description: Tokens and user profile
+          description: Successfully exchanged code for tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accessToken: 
+                        type: string
+                        example: 'BQD8K...'
+                      refreshToken: 
+                        type: string
+                        example: 'AQC7M...'
+                      user: 
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid code, expired code, or redirect URI mismatch
+          content:
+            application/json:
+              schema: 
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: 'invalid_grant'
+                  message:
+                    type: string
+                    example: 'Authorization code expired or redirect URI mismatch'
+                  details:
+                    type: object
+                    properties:
+                      error:
+                        type: string
+                        example: 'invalid_grant'
+                      error_description:
+                        type: string
+                        example: 'Authorization code expired'
+                  usedRedirectUri:
+                    type: string
+                    example: 'http://127.0.0.1:8081'
+        '401':
+          description: Invalid client credentials
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  accessToken: { type: string }
-                  refreshToken: { type: string }
-                  user: { $ref: '#/components/schemas/User' }
-        '400':
-          description: Invalid code or redirect URI mismatch
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiError' }
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: 'invalid_client'
+                  message:
+                    type: string
+                    example: 'Invalid client credentials or redirect URI not registered'
   /api/auth/pkce-login:
     post:
       tags: [Auth]

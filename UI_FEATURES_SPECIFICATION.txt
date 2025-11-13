@@ -1,0 +1,90 @@
+You are designing a fully modular, mobile-first UI system for a Spotify-style music tracking app (“RateSangeet”) using Material UI v5 with Material Design 3 (M3) guidelines.
+
+All components must use Material UI’s official components only (no third-party UI libraries or inline CSS files).
+
+================================================================================
+🏗️ DESIGN FOUNDATIONS
+================================================================================
+
+PRIORITY: MOBILE-FIRST RESPONSIVE DESIGN
+- Base breakpoint: mobile (xs).
+- Scale layouts up progressively for sm, md, and lg using MUI’s Grid system.
+- All padding, margins, and gaps follow the 8px grid system (Material baseline).
+
+THEME (deafult of MUI 3 , static)
+
+
+================================================================================
+📱 LAYOUT SYSTEM
+================================================================================
+
+- Use <Container> (maxWidth="sm" or "md") for all screen content.
+- Use <Grid container spacing={2}> for responsive layouts.
+- Use <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}> for vertical stacking.
+- Each screen must scale naturally from 360px → 1440px.
+- Use <AppBar>, <BottomNavigation>, <Fab>, <Card>, <Chip>, <List>, <Tabs>, <Skeleton> from Material UI only.
+- Do not use inline CSS or styled-components; use sx={} props everywhere.
+
+================================================================================
+🧩 COMPONENT CREATION RULES
+================================================================================
+
+When generating new components:
+- Create each UI section as a new React component file (e.g., StatCard, ReviewCard, AlbumCard, TrackList, CommentThread).
+- All components must be built purely from MUI primitives (Card, Typography, Avatar, Stack, Grid, etc.).
+- No custom positioning with absolute/fixed styles; use MUI Grid/Flex only.
+- Use elevation={0} and borders instead of box-shadow for consistency with M3.
+- All buttons and chips follow the green accent (#1DB954) when interactive.
+
+Example components:
+- StatCard: compact info display with icon + label + count.
+- AlbumCard: album art + title + artist + progress bar.
+- ReviewCard: avatar + name + text + rating stars.
+- CommentThread: nested comments with Divider + indent.
+
+================================================================================
+🧠 BEHAVIOR AND INTERACTION
+================================================================================
+
+- Mobile-first: prioritize vertical stacking and scrollable content.
+- Use BottomNavigation for tab switching (Home, History, Discovery, Search, Profile).
+- Implement responsive Grid breakpoints (xs=12, sm=6, md=4 for cards).
+- Use skeleton loaders on all async content (MUI Skeleton).
+- Use Pull-to-refresh behavior (if PWA) or Refresh icon button in AppBar.
+- Use MUI transitions (Fade, Grow) for smooth mounting/unmounting.
+
+================================================================================
+🎨 VISUAL CONSISTENCY
+================================================================================
+
+- Typography hierarchy: h5 (section title), body1 (main text), body2 (secondary).
+- Avatar sizes: small=32px, medium=48px, large=96px.
+- Card radius = 12px, chip radius = 8px.
+- Uniform padding inside Cards: p={2}.
+- Consistent section spacing using MUI theme spacing(2–3).
+- Accent green used only for interactive elements or highlights.
+
+================================================================================
+⚡ PERFORMANCE & ACCESSIBILITY
+================================================================================
+
+- Lazy load secondary screens.
+- All icons must include aria-labels.
+- Use contrast-verified color combinations (green on black).
+- Ensure minimum tap target 44x44px.
+- Enable system dark mode sync via `prefers-color-scheme`.
+
+================================================================================
+🚀 OUTPUT INSTRUCTIONS
+================================================================================
+
+Generate all screen-level and component-level UI scaffolding using:
+- React + MUI v5 + Material Design 3
+- ThemeProvider (global theme)
+- Grid, Box, and Stack for layout
+- sx={} for styling
+- Pure function components (React.FC)
+- No external CSS or libraries
+- Mobile-first grid alignment
+
+Goal: Build a cohesive, dark, M3-style UI system that looks consistent across every screen (Home, History, Discovery, Search, Profile, Review, Album Detail, etc.) with reusable modular components and fluid responsiveness.

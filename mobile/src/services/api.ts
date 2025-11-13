@@ -1,10 +1,136 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import config from '../config';
+import { getAuth, saveAuth } from '../utils/auth';
 
 const api = axios.create({
   baseURL: config.API_URL,
   timeout: 30000, // Increased to 30 seconds for slower connections
 });
+
+// Request interceptor - attach Authorization header automatically
+api.interceptors.request.use(
+  async (config) => {
+    const auth = await getAuth();
+    if (auth?.accessToken && config.headers) {
+      config.headers['Authorization'] = `Bearer ${auth.accessToken}`;
+    }
+    // Provide stable identity to server auth middleware so it doesn't depend on DB-stored accessToken
+    if (auth?.user?.id && config.headers) {
+      config.headers['x-user-id'] = auth.user.id;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Token refresh logic
+let isRefreshing = false;
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars */
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: any) => void;
+}> = [];
+/* eslint-enable no-unused-vars, @typescript-eslint/no-unused-vars */
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token!);
+    }
+  });
+  failedQueue = [];
+};
+
+// Response interceptor for automatic token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // If error is 401 and we haven't retried yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Wait for the token to be refreshed
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers['Authorization'] = `Bearer ${token}`;
+            return api(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const auth = await getAuth();
+
+        if (!auth.user?.id && !auth.refreshToken) {
+          processQueue(new Error('No user or refresh token'), null);
+          return Promise.reject(error);
+        }
+
+        // Preferred: PKCE refresh updates server-side user tokens to keep Bearer and DB in sync
+        let accessToken: string | null = null;
+        let newRefresh: string | null = null;
+        try {
+          if (auth.user?.id) {
+            const pkce = await axios.post(`${config.API_URL}/auth/pkce-refresh`, {
+              userId: auth.user.id,
+            });
+            const data = pkce.data.data || pkce.data;
+            accessToken = data.accessToken || data.access_token || null;
+            newRefresh = data.refreshToken || data.refresh_token || null;
+          }
+        } catch {
+          // Fallback to legacy /auth/refresh with client secret flow when PKCE path is unavailable
+          if (auth.refreshToken) {
+            const legacy = await axios.post(`${config.API_URL}/auth/refresh`, {
+              refreshToken: auth.refreshToken,
+            });
+            const data = legacy.data.data || legacy.data;
+            accessToken = data.accessToken || data.access_token || null;
+            newRefresh = data.refreshToken || data.refresh_token || null;
+          }
+        }
+
+        if (!accessToken) {
+          processQueue(new Error('Failed to refresh token'), null);
+          isRefreshing = false;
+          return Promise.reject(error);
+        }
+
+        // Save new tokens (preserve existing refresh if none returned)
+        await saveAuth({
+          accessToken,
+          refreshToken: newRefresh || auth.refreshToken,
+          user: auth.user,
+        });
+
+        // Update headers on the original request
+        if (originalRequest.headers) {
+          originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
+          if (auth.user?.id) originalRequest.headers['x-user-id'] = auth.user.id;
+        }
+
+        processQueue(null, accessToken);
+        isRefreshing = false;
+
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        isRefreshing = false;
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export interface SpotifyImage {
   url: string;
@@ -746,3 +872,78 @@ export const updateUserProfile = async (
   const response = await api.put(`/users/${userId}/profile`, data);
   return response.data;
 };
+
+// ===== V2 API Endpoints (Minimal Payloads) =====
+
+export interface V2Album {
+  id?: string;
+  name: string;
+  artistName?: string;
+  totalTracks?: number;
+  imageSmall?: string;
+}
+
+export interface V2Track {
+  id?: string;
+  name: string;
+  albumId?: string;
+  albumName?: string;
+  artistName?: string;
+  durationMs?: number;
+}
+
+export interface V2Scrobble {
+  spotifyId: string;
+  trackName: string;
+  artistName: string;
+  albumId?: string;
+  albumName?: string;
+  albumArt?: string;
+  durationMs?: number;
+  playedAt: string; // ISO
+}
+
+export interface V2SummaryStats {
+  totalMinutes?: number;
+  totalScrobbles?: number;
+  uniqueArtistsCount?: number;
+}
+
+export async function getV2Album(id: string) {
+  const res = await api.get(`/v2/album/${id}`);
+  return res.data as V2Album;
+}
+
+export async function getV2Track(id: string) {
+  const res = await api.get(`/v2/track/${id}`);
+  return res.data as V2Track;
+}
+
+export async function getV2SummaryStats() {
+  const res = await api.get('/v2/stats/summary');
+  return res.data as V2SummaryStats;
+}
+
+export async function getV2TopAlbums(limit: number = 10) {
+  const res = await api.get('/v2/stats/top-albums', { params: { limit } });
+  return (res.data || []) as Array<{ albumId?: string; name: string; artist: string; albumArt?: string; count: number }>;
+}
+
+export async function getV2RecentScrobbles(limit: number = 50) {
+  const res = await api.get('/v2/scrobbles/recent', { params: { limit } });
+  return (res.data?.scrobbles || []) as V2Scrobble[];
+}
+
+// Filter recent scrobbles for an album (by id OR fallback name)
+export async function getV2AlbumScrobbles(albumIdOrName: string, limit: number = 200) {
+  const scrobbles = await getV2RecentScrobbles(limit);
+  return scrobbles.filter(s => s.albumId === albumIdOrName || s.albumName === albumIdOrName);
+}
+
+// Derive album progress from scrobbles and totalTracks
+export function computeAlbumProgress(scrobbles: V2Scrobble[], totalTracks?: number) {
+  if (!totalTracks || totalTracks < 4) return { percent: 0, uniqueCount: 0 };
+  const uniq = new Set(scrobbles.map(s => s.spotifyId || `${s.trackName}|${s.artistName}`));
+  const percent = Math.min(100, (uniq.size / totalTracks) * 100);
+  return { percent, uniqueCount: uniq.size };
+}

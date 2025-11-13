@@ -1,0 +1,112 @@
+﻿RateSangeet Design System & Developer Implementation Guide v1.0
+
+1. Design Philosophy
+This design system establishes a unified Material Design 3-based structure for the RateSangeet
+
+mobile application. It prioritizes consistency, scalability, and performance across all screens built in
+
+Expo using React Native Paper. The visual style emphasizes smooth motion, clear hierarchy, and
+
+structured content built from composable MUI3-style primitives. The system is mobile-first,
+
+responsive, and designed for API-driven (headless) backends.
+
+2. Color & Typography
+Color System: Default Material Design 3 tonal palettes (primary, secondary, tertiary, surface,
+
+background, error). Typography: Material baseline (Display, Headline, Title, Body, Label). Dynamic
+
+color theming supported through PaperProvider theme context. No hardcoded color values. Uses
+
+system color tokens.
+
+3. Shape & Elevation
+Shape: Square edges (0 radius by default). Corners rounded only for cards and buttons (4-8dp
+
+radius). Dynamic Elevation: Adapts using surfaceTint and elevation overlay from M3 tokens.
+
+Elevation tiers (Material 3 standard):
+
+| Level | Use Case | Shadow Blur | Overlay Opacity |
+
+| 0dp | Background | None | 0% |
+
+| 1dp | Cards, Chips | 1-2px | 5% |
+
+| 2dp | FAB, Dialogs | 3-6px | 8% |
+
+| 3dp+ | Modals, Sheets | 6-10px | 10%+ |
+
+4. Motion & Animation
+Transitions use Material 3 easing and duration standards.
+
+Easing & Duration Reference:
+
+| Type | Easing | Duration | Use Case |
+
+| Emphasized | cubic-bezier(0.2, 0, 0, 1) | 500ms | Begin/end on screen |
+
+| Emphasized Decelerate | cubic-bezier(0, 0, 0, 1) | 400ms | Enter |
+
+
+
+| Emphasized Accelerate | cubic-bezier(0.3, 0, 1, 1) | 200ms | Exit |
+
+| Standard | cubic-bezier(0.2, 0, 0, 1) | 300ms | Normal transitions |
+
+Skeleton Loaders: All asynchronous content should render skeleton loaders with a subtle opacity
+
+pulse (fade 0.6-1.0, 1.2s loop).
+
+5. Grid & Layout System
+Responsive Grid Breakpoints:
+
+| Breakpoint | Device | Columns | Gutter | Margin |
+
+| xs | <600px | 4 | 8dp | 16dp |
+
+| sm | 600-904px | 8 | 12dp | 24dp |
+
+| md | 905-1239px | 12 | 16dp | 24dp |
+
+| lg | 1240-1439px | 12 | 24dp | 24dp |
+
+| xl | >=1440px | 12 | 24dp | 24dp |
+
+Rules: Mobile-first layout with xs (4-column grid). Use responsive utilities (flex, gap, padding).
+
+Components snap to grid units.
+
+6. Component Structure
+Each screen is built from modular UI components grouped by domain (e.g., ReviewCard, AlbumTile,
+
+NowPlayingBanner). Each component receives props from a parent container. Build each section as
+
+reusable, flex-aligned units.
+
+7. Navigation & Transition Rules
+Transition Types: Forward/Backward (slide), Lateral (fade/slide), Enter/Exit (scale-fade). Skeleton
+
+used for async list loads. Duration: 200-400ms.
+
+8. Developer Implementation (Expo + React Native Paper)
+Environment: Expo (mobile-first). Library: react-native-paper (Material 3 compliant). Import
+
+PaperProvider at root; wrap navigation container. Define theme tokens for colors, typography,
+
+elevation, and roundness. Use MD3LightTheme or MD3DarkTheme as base tokens. Maintain 60fps
+
+with lazy rendering & skeleton loaders.
+
+9. Performance & Testing
+
+
+
+Target: transitions <300ms, first paint <1.5s, FPS >=55. Use memoization (React.memo). Test via
+
+Jest/Storybook; verify responsive breakpoints; profile loaders on Android/iOS.
+
+10. Design System Maintenance
+Maintain a single theme.ts controlling typography, color, shape, and elevation. Add new components
+
+via /components/ui. Sync React Native Paper and Expo versions regularly.

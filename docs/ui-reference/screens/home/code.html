@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Music Review Home</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#2b2bee",
+              "background-light": "#f6f6f8",
+              "background-dark": "#101022",
+            },
+            fontFamily: {
+              "display": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 24
+      }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+<!-- Top App Bar -->
+<div class="flex items-center p-4">
+<div class="flex size-12 shrink-0 items-center justify-start">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User profile picture" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDhMP48L1uiTadcnVdcYMVAFlish5frFOXPgk6j0dX5QsUBLloAmfZZc2wBGE266b-4kJKdYFL11sguw417Vt-6RGb5-1oO2fKm0kM7Zfod8vRbnQ6-B-EQG7TgkCmmgkBFtu-we1_Xi1VI7ZLySZzis_K_zDH7yhLh9AORlhGm7bV27d07ncWNFDUDPWdqveonYC3UH5S9vplNvNUqjlgbcEzEaIIif6ih9MFaeCLwHwaKWD0Gm1hzQA2QR5A4MkLCllBuS00cD8Im");'></div>
+</div>
+<h2 class="text-slate-800 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1">Hello, Jane</h2>
+<div class="flex w-12 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-12 bg-transparent text-slate-800 dark:text-white gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined text-2xl">search</span>
+</button>
+</div>
+</div>
+<!-- Stats -->
+<div class="grid grid-cols-2 gap-4 p-4">
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-primary/10">
+<p class="text-slate-600 dark:text-slate-300 text-sm font-medium leading-normal">Total Tracks</p>
+<p class="text-slate-900 dark:text-white tracking-light text-2xl font-bold leading-tight">1,204</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-primary/10">
+<p class="text-slate-600 dark:text-slate-300 text-sm font-medium leading-normal">Total Reviews</p>
+<p class="text-slate-900 dark:text-white tracking-light text-2xl font-bold leading-tight">88</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-primary/10">
+<p class="text-slate-600 dark:text-slate-300 text-sm font-medium leading-normal">Total Artists</p>
+<p class="text-slate-900 dark:text-white tracking-light text-2xl font-bold leading-tight">312</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-primary/10">
+<p class="text-slate-600 dark:text-slate-300 text-sm font-medium leading-normal">Total Time</p>
+<p class="text-slate-900 dark:text-white tracking-light text-2xl font-bold leading-tight">95h 12m</p>
+</div>
+</div>
+<!-- Charts -->
+<div class="flex flex-col gap-4 px-4 py-2">
+<h2 class="text-slate-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em]">Your Top Albums</h2>
+<div class="flex min-w-72 flex-1 flex-col gap-2 p-4 rounded-lg bg-white dark:bg-zinc-900/50">
+<div class="flex justify-between items-baseline">
+<p class="text-slate-900 dark:text-white tracking-light text-xl font-bold leading-tight truncate">Based on plays</p>
+<div class="flex gap-1 items-center">
+<p class="text-slate-500 dark:text-slate-400 text-xs font-normal leading-normal">Last 30 Days</p>
+<p class="text-green-500 text-xs font-medium leading-normal">+5%</p>
+</div>
+</div>
+<div class="grid min-h-[160px] grid-flow-col gap-4 grid-rows-[1fr_auto] items-end justify-items-center pt-4">
+<div class="bg-primary/20 rounded-t-full w-full" style="height: 70%;"></div>
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-bold leading-normal tracking-[0.015em]">Album A</p>
+<div class="bg-primary/20 rounded-t-full w-full" style="height: 40%;"></div>
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-bold leading-normal tracking-[0.015em]">Album B</p>
+<div class="bg-primary rounded-t-full w-full" style="height: 100%;"></div>
+<p class="text-primary text-[11px] font-bold leading-normal tracking-[0.015em]">Album C</p>
+<div class="bg-primary/20 rounded-t-full w-full" style="height: 70%;"></div>
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-bold leading-normal tracking-[0.015em]">Album D</p>
+<div class="bg-primary/20 rounded-t-full w-full" style="height: 40%;"></div>
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-bold leading-normal tracking-[0.015em]">Album E</p>
+</div>
+</div>
+</div>
+<!-- Section Header: Highest Rated -->
+<h2 class="text-slate-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Highest Rated</h2>
+<!-- Highest Rated Albums List -->
+<div class="flex flex-col gap-4 px-4">
+<div class="flex items-center gap-4 cursor-pointer">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-md size-16 shrink-0" data-alt="Album cover for 'Currents' by Tame Impala" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBMyRidwZY-xX5KsClVV-2ykCBhvomWBaEgmDSFh_NK0EfMYnFAafJh85JAeG_59Q8smkxMNjrcc8cjefGqYoC3Yd-vb_AKYCIsBweW4yEs4gHMRHit6OrHYPPIZRFnDgLyNU3ZZrAHmOA_gKWDWwzclNz3yTm_Y0kAXAgpVZWIFOS98mMpSeJbjPOhBLWJfO4WNSM8406jubHspUdl0nYHnTM4_UTtKJS76Bp8TZYC8fJ4jZGhqTUBdGzb7wq4cxxlbfBMeY9HcHPL");'></div>
+<div class="flex flex-col flex-1">
+<p class="text-slate-900 dark:text-white text-base font-bold leading-normal">Currents</p>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium leading-normal">Tame Impala</p>
+</div>
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 cursor-pointer">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-md size-16 shrink-0" data-alt="Album cover for 'Blonde' by Frank Ocean" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB38MdpI3uEPg4QtdKdGPUvKhdNQejc28z3aDdUxhi1hqHl38yln_us_7vLqB_DHqeqbYtvERRvQWT5J4wceYYY_cpGOfyi0u8NYJk7rPHxPIXqhjFPeBD138GlpnvQvL18te5RFLIsniZm_NA0h-ktBqHMbqybukujluaOxy3qbHHXBfJgfwUx6XnhwOReZbbPtJyzk4SjtygHuQ-iIdhoEGUmmw6vQCs-V5MV7VANXxQXlA2lyxN7ycgdNd9nWdlxakIDR4wOmNJG");'></div>
+<div class="flex flex-col flex-1">
+<p class="text-slate-900 dark:text-white text-base font-bold leading-normal">Blonde</p>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium leading-normal">Frank Ocean</p>
+</div>
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 cursor-pointer">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-md size-16 shrink-0" data-alt="Album cover for 'Discovery' by Daft Punk" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBYYgRFEkwiReq6XjGXyNSRm3Amy46xad_dEPVDxGOq73d8Ud4j_O2dsly1ZmFjES281Nx26L0PmQi79uHmRZBf0dqQBXqLpi8a2wBk6n2BVAF_SgzO7-QvTTHujEB9LsDxDBlbMj9rRuR6fM1b84N7Q_x4Y3_xp5PnjFZrYPkkCfaSrRCehcXO_BOYqk_ogMT8mfn1H-QvqPys_88kBNm577gMTpYjKfEo7BVTcjHQuHJokQsrnrFDIk-0uc21YB1ZIYTlhFIOuC8K");'></div>
+<div class="flex flex-col flex-1">
+<p class="text-slate-900 dark:text-white text-base font-bold leading-normal">Discovery</p>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium leading-normal">Daft Punk</p>
+</div>
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 cursor-pointer">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-md size-16 shrink-0" data-alt="Album cover for 'AM' by Arctic Monkeys" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuA7FMryIegDzw5sDKI-H_zI31hQDGjbIpT4aW-e2eE4Gyx8xCXjerxRUhA8U69LgzOAd-OCN5Lyo3D8Cev-ZstUrYE7h-KiLcZSqWnWMML4JZ_TUeE1VvnjjMmi8FmLrg7I4tcJwMHyEvYZ_b5C73-B7eZ5bObo6aC2TykNJbaRJqsLe-Ntq4EaVBNox48qSTer-RCCu61O3Fg97t4URlxVHAt3HvoW7TQ_ZrFNUCCy8Sw5-fEhcX8JJqp4Jy7pwFTa-WhgVM_FQUuN");'></div>
+<div class="flex flex-col flex-1">
+<p class="text-slate-900 dark:text-white text-base font-bold leading-normal">AM</p>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium leading-normal">Arctic Monkeys</p>
+</div>
+<span class="material-symbols-outlined text-slate-400 dark:text-slate-500">chevron_right</span>
+</div>
+</div>
+<!-- Section Header: Your Vibe -->
+<h2 class="text-slate-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-6">Your Vibe</h2>
+<!-- Vibe Chips -->
+<div class="flex flex-wrap gap-2 px-4">
+<div class="flex cursor-pointer items-center justify-center rounded-full bg-primary/20 px-4 py-2">
+<p class="text-primary text-sm font-medium leading-normal">Indie Rock</p>
+</div>
+<div class="flex cursor-pointer items-center justify-center rounded-full bg-primary/20 px-4 py-2">
+<p class="text-primary text-sm font-medium leading-normal">Synthwave</p>
+</div>
+<div class="flex cursor-pointer items-center justify-center rounded-full bg-primary/20 px-4 py-2">
+<p class="text-primary text-sm font-medium leading-normal">Alternative</p>
+</div>
+<div class="flex cursor-pointer items-center justify-center rounded-full bg-primary/20 px-4 py-2">
+<p class="text-primary text-sm font-medium leading-normal">Daft Punk</p>
+</div>
+<div class="flex cursor-pointer items-center justify-center rounded-full bg-primary/20 px-4 py-2">
+<p class="text-primary text-sm font-medium leading-normal">The Strokes</p>
+</div>
+</div>
+<!-- Section Header: From Your Friends -->
+<h2 class="text-slate-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-6">From Your Friends</h2>
+<!-- Friends' Reviews -->
+<div class="flex flex-col gap-4 px-4 pb-8">
+<div class="flex cursor-pointer gap-4 rounded-lg bg-white dark:bg-zinc-900/50 p-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 shrink-0" data-alt="Profile picture of friend, David" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC004m-gnS1E1kiuLkMYzk-WLMf9QIt5jDWP6pTQ9dTrp6M3dIwgkLLbxCqrRMIJtFkyu8-7Le5fnbX8JznSMYcvrEByuKnXcFgsUNlo09eEPR8QDhuwrQHWEdbC5ENvR5h7ohuXOTsqnjg6aoNixPFrGeY14vjwhiVZFQO66F5jAVf-8oKGD4f0uUoF51bgrYQsh538X2bTaIc_zgx_jCxszfM09ZWU4DICphGyt_BX9ZOePXGtAyoUNh6mCQgCG7kGvWQtwxkMiBv");'></div>
+<div class="flex flex-col flex-1 gap-1">
+<p class="text-slate-900 dark:text-white text-sm font-bold leading-normal">David reviewed <span class="font-extrabold">The New Abnormal</span></p>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-slate-300 dark:text-slate-600 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-normal leading-normal line-clamp-2">"A brilliant return to form for The Strokes, blending their classic sound with some fresh ideas. 'The Adults Are Talking' is an instant classic."</p>
+</div>
+</div>
+<div class="flex cursor-pointer gap-4 rounded-lg bg-white dark:bg-zinc-900/50 p-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 shrink-0" data-alt="Profile picture of friend, Maria" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCeDeE3DQT_-TGGgsrGcxaWIamMn6XFEAHiudIe09iCmHsNus-fAJFsndYlLDqSaZkmbMvXfczb5RmI_oCYqgG4NI6oIu2mPZNB2WySa9rE-HDc106_DlKN7k__4PEM-ZHQx8MfAz683vZjQfk_shqiBhOPlYH5IGdjYvfUu_c-D6ruRpLfwDIYp_ZB-BQ1kN9qqyHEk8nEn-4jB8nsZ8IWXRibf_irf87vLgVcihuUd9ZiuFBZZCeAT1SNdTcz__p-ZhVNc9X6ULjs");'></div>
+<div class="flex flex-col flex-1 gap-1">
+<p class="text-slate-900 dark:text-white text-sm font-bold leading-normal">Maria reviewed <span class="font-extrabold">After Hours</span></p>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-amber-400 text-base" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-normal leading-normal line-clamp-2">"Absolutely cinematic. The Weeknd creates a whole world with this album. 'Blinding Lights' is obviously a hit, but the deeper cuts are where it truly shines."</p>
+</div>
+</div>
+</div>
+</div>
+</body></html>

@@ -1,120 +1,136 @@
-# Spotify Music Tracker - Project Instructions
+# Ratesangeet (Spotify Music Tracker) - V2 Project Instructions
 
 ## Project Overview
-A mobile music tracking application similar to Letterboxd but for Spotify. Users can track, rate, and review songs, albums, and singles they've listened to. Built as a native mobile app (Android APK / iOS IPA).
+A mobile music tracking application (like Letterboxd for Spotify) where users track, rate, and review songs/albums. **V2 redesign** focuses on: client-side scrobble detection, 90-day cloud retention with device archive, minimal API payloads, album completion logic (4-track min, 70% threshold), and fast incremental loading.
 
 ## Tech Stack
-- **Mobile App**: React Native + Expo + TypeScript
+- **Mobile**: React Native + Expo + TypeScript, expo-sqlite (local archive)
 - **Backend**: Node.js + Express + TypeScript
-- **Database**: MongoDB with Mongoose + Local SQLite (hybrid storage)
-- **Authentication**: Spotify OAuth 2.0 (PKCE on-device)
+- **Database**: MongoDB Atlas (cloud) + SQLite (device archive)
+- **Auth**: JWT (short-lived access + refresh rotation); Spotify OAuth 2.0 for initial login
 - **Navigation**: React Navigation
-- **State Management**: React Context API
-- **Local Storage**: expo-sqlite for scrobble archive
+- **State**: React Context API
+- **UI**: Material Design 3 Paper components
+
+## V2 Architecture Principles
+- **Hybrid storage**: Cloud keeps recent scrobbles (90d TTL), device archives older ones in SQLite
+- **Client-side scrobble detection**: 40–50% threshold or ≥30s → queue locally, batch sync to server
+- **Minimal cloud schema**: scrobbles_recent (TTL), albumstats, trackstats, userstatssummaries, reviews, reviewcomments, optional caches
+- **Deterministic keys**: albumKey = albumId || albumName; trackKey = spotifyId || artist+trackName
+- **API v2 returns tiny shapes**: always `.select()` + `.lean()`, gzip + ETag, pagination (default limit=20, max=100)
+- **Album completion**: only ≥4 tracks; 70% unique tracks = completion; replays after full completion increment `albumPlayCount`
+- **No Spotify proxy dumps**: server maps to minimal shapes before returning
+- **Incremental home loading**: skeleton + staggered small calls (stats/summary, recent scrobbles, top albums)
 
 ## Project Structure
-- `/mobile` - React Native mobile application (Expo)
-  - `/src/storage` - Local SQLite for scrobble history
-  - `/src/context` - Auth and Scrobble contexts
-  - `/src/services` - API client
-- `/server` - Express backend API
-  - `/src/models` - Mongoose models (User, Review, AlbumStats, TrackStats, UserStatsSummary)
-  - `/src/routes` - API routes (auth, music, reviews, stats, users)
-  - `/src/jobs` - Background jobs (archive scrobbles)
-- `/docs` - Architecture and storage documentation
-- `/shared` - Shared TypeScript types and utilities
+- `/mobile` - React Native (Expo)
+  - `/src/context` - Auth, Scrobble (batch sync + archive job)
+  - `/src/services` - API client (v2 endpoints)
+  - `/src/storage` - SQLite archive schema
+  - `/src/screens` - Home (incremental), History, AlbumDetail, Profile
+- `/server` - Express API
+  - `/src/models` - ScrobbleRecent, TrackStats, AlbumStats, UserStatsSummary, Review, ReviewComment, User
+  - `/src/routes/v2` - scrobbles (batch-upsert, recent, archive-ready, ack), stats (tracks, albums, summary), track/album/artist/credits
+  - `/src/middleware` - JWT auth, gzip, ETag, rate-limit
+  - `/src/services` - SpotifyService (minimal mappers, cache)
+  - `/src/jobs` - Archive eligibility, TTL cleanup
+- `/docs` - V2_SYSTEM_DESIGN, API_V2_SPEC, SCROBBLING_V2_PLAN, DATABASE_REBUILD_CUTOVER_PLAN, audits
 
-## Key Features
-1. Spotify OAuth authentication (PKCE, no client secret)
-2. Hybrid storage: raw scrobbles local, summaries cloud
-3. Rate songs/albums (1-5 stars or 1-10 scale)
-4. Write and save reviews
-5. User dashboard with stats
-6. Native mobile experience
-7. Build to APK for Android
-8. Album/track play counts in cloud
-9. Archive job to thin old scrobbles
+## V2 Key Features
+1. **Client-side scrobble detection** (40–50% or ≥30s) + batch sync
+2. **90-day cloud retention** with device archive (SQLite)
+3. **Album completion logic**: only ≥4 tracks; 70% unique = completion
+4. **Replay protection**: 15-min guard on same track; new completion cycle after 70% replayed
+5. **Minimal API payloads** (≤30 KB typical, ≤100 KB lists)
+6. **JWT auth** (short-lived access + refresh)
+7. **Incremental home loading** (skeleton + staggered calls)
+8. **Rate/review** songs/albums (1-5 stars or 1-10 scale)
+9. **Material Design 3 Paper UI**
 
-## Core Product Rules (Scrobbling, Progress, Stats)
+## V2 Scrobbling Rules
 
-### Scrobbling contract
-- A track is considered "scrobbled" when at least 40% of its duration is played.
-- Threshold constant: `SCROBBLE_THRESHOLD = 0.4` (mobile `ScrobbleContext`, server `/scrobble` route).
-- Scrobbles are idempotent per (userId, spotifyId, ~10s time window) and safe to retry.
-- Deduplication: Server uses 10s-rounded playedAt timestamp to group rapid re-scrobbles; client uses simple track ID to prevent duplicate scrobbles within same session.
-- Persisted fields for each scrobble (Mongo):
-  - `userId`, `spotifyId`, `trackName`, `artistName`, `albumId`, `albumName`, `albumArt`, `durationMs`, `playedAt`, `source`.
+### Client-Side Detection
+- **Threshold**: `progressMs / durationMs >= 0.4` OR `progressMs >= 30000` → scrobble
+- Client queues locally, syncs in batches (max 100) every 30s or on background
+- Calculate `playedAtRounded10s` = floor((timestamp - progressMs) / 10000) * 10000 for stable dedup key
 
-### Album progress (as shown on History/Album Detail)
-- listenedTracks = number of unique album tracks that crossed the 40% threshold.
-- totalTracks = album track count from Spotify API (via albumId); albums without albumId are skipped.
-- completionPercent = round((listenedTracks / totalTracks) * 100).
-- totalPlays = total scrobble count for that album (can be > listenedTracks if user replayed tracks).
-- An album is shown as "Completed" when completionPercent === 100.
+### Server-Side Logic (POST /api/v2/scrobbles/batch-upsert)
+- Upsert `scrobbles_recent` by unique `(userId, spotifyId, playedAtRounded10s)` (TTL 90d on playedAt)
+- If `isScrobbled`:
+  - Upsert `trackstats` by `(userId, trackKey)`: increment `playCount` if last play >15min ago or null; always update `lastPlayedAt`
+  - Fetch album `totalTracks` (once, cached); skip if <4 tracks
+  - Upsert `albumstats` by `(userId, albumKey)`:
+    - Increment `playCount`
+    - Add trackId to `uniqueTracksPlayed` (array)
+    - If `uniqueTracksPlayed.length / totalTracks >= 0.7`: increment `albumPlayCount`, clear `uniqueTracksPlayed`, set `lastCompletedAt`
+  - Increment `userstatssummaries.totalScrobbles`
 
-### Top Albums (Home)
-- We surface albums where unique tracks played >= 3 (heuristic to filter singles/EPs).
-- `count` = total scrobbles for that album (number of scrobbled tracks, not unique tracks).
-- UI label shows: "{count} scrobbles".
-- Server may also compute `totalTimeMs` for future use, but UI prioritizes scrobble count.
+### Album Completion Contract
+- **Only albums with ≥4 tracks** are tracked (singles/EPs ignored)
+- **Progress** = `uniqueTracksPlayed.length / totalTracks * 100`
+- **Completion** = progress >= 70% → increment `albumPlayCount`, reset `uniqueTracksPlayed` for new cycle
+- **Replays**: same track replayed doesn't increase progress; replaying 70%+ after full completion increments `albumPlayCount` again
 
-## Recent Decisions & Fixes (2025-11)
+### Cloud Retention & Archive
+- `scrobbles_recent` TTL = 90 days (MongoDB TTL index on `playedAt`)
+- Device pulls eligible (>83d) via GET `/api/v2/scrobbles/archive-ready`, saves to SQLite, ACKs delete via POST `/api/v2/scrobbles/ack-archive`
+- TTL is safety net; device archive is primary long-term storage
 
-### AlbumId data integrity fix
-- Root cause: `albumId` was missing from the `Scrobble` schema → values were dropped on insert.
-- Fixes applied:
-  1) Added `albumId?: string` to `server/src/models/Scrobble.ts` (interface + schema).
-  2) Re-ran `server/add-test-scrobbles.ts` to seed realistic partial albums (Rumours, Hotel California, Thriller).
-  3) Improved album aggregation on mobile `HistoryScreen` to set `albumId` from any scrobble in the group (not only the first).
-- Result: Album detail and progress now use real Spotify album tracks and show correct percentages (e.g., 31–45%).
+## V2 API Design (Minimal Payloads)
 
-### Performance guardrails
-- Server `GET /music/listening-stats` uses fast mode:
-  - Limits to last ~200 scrobbles, `.select()` only needed fields, `.lean()` for plain objects.
-  - Avoids per-album Spotify API calls in stats; calculates in-memory.
-- Mobile HomeScreen wraps calls with a 10s timeout and uses backoff retry for resilience.
-- HistoryScreen processes albums in small batches to avoid UI stalls and rate limits.
+### Endpoints
+- GET `/api/v2/track/:id` → `{ id, name, albumId, albumName, artistId, artistName, durationMs }`
+- GET `/api/v2/album/:id` → `{ id, name, artistName, totalTracks, imageSmall }`
+- GET `/api/v2/artist/:id` → `{ id, name, imageSmall }`
+- GET `/api/v2/credits/:trackId` → `{ trackId, artists:[{id, name, role}], producers?, writers? }`
+- GET `/api/v2/now-playing` → `{ trackId, trackName, albumId, artistName, progressMs, durationMs, isPlaying }`
+- GET `/api/v2/playing-progress` → `{ progressMs, durationMs, isPlaying, deviceName? }`
+- POST `/api/v2/scrobbles/batch-upsert` → batch sync from mobile (max 100 items)
+- GET `/api/v2/scrobbles/recent?limit=50&before=iso&include=skips` → recent scrobbles with pagination
+- GET `/api/v2/scrobbles/archive-ready?before=iso` → eligible for device archive (>83d)
+- POST `/api/v2/scrobbles/ack-archive` → delete after device save
+- GET `/api/v2/stats/summary` → `{ totalMinutes, totalScrobbles, uniqueArtistsCount }`
+- GET `/api/v2/stats/top-albums?limit=10` → `[{ albumId, name, artist, albumArt, count }]`
+- GET `/api/v2/stats/top-tracks?limit=10` → `[{ spotifyId, name, artist, count }]`
 
-### Navigation contracts
-- AddReview screen expects:
-  - Album: `{ itemType: 'album', album: { id, name, images, artists } }`.
-  - Track: `{ itemType: 'track', track }`.
-- Album Detail "Rate This Album" button navigates with the same shape as Search results.
+### Contracts
+- **Pagination**: default limit=20 (max=100); `before` cursor for next page
+- **Projection**: always `.select()` explicit fields + `.lean()`
+- **Headers**: gzip + ETag on cacheable GETs; Cache-Control
+- **Rate limits**: batch-upsert 10/s burst, 100/min per user; now-playing 30/min
+- **Auth**: JWT required for all v2 endpoints (no x-user-id trust)
 
-## API Contracts (selected)
+## V2 Data Model (Cloud)
 
-### Mobile → Server
-- `GET /music/scrobbles?userId&limit` → Array<Scrobble> (see fields above).
-- `GET /music/listening-stats?userId&accessToken?` →
-  ```ts
-  interface ListeningStats {
-    totalMinutes: number;          // sum(durationMs) / 60000 of fetched scrobbles
-    totalScrobbles: number;        // number of scrobbles in the window
-    uniqueArtistsCount?: number;
-    topAlbums: Array<{
-      name: string;
-      artist: string;
-      albumArt?: string;
-      count: number;               // scrobble count for that album
-      totalTracks?: number;        // number of unique tracks played (heuristic)
-      totalTimeMs?: number;        // optional; may be present for future UI
-    }>;
-    topSingles?: Array<...>;
-    topGenres: Array<{ genre: string; count: number }>;
-    topArtists?: Array<{ artist: string; count: number }>;
-  }
-  ```
+### Collections
+- **scrobbles_recent** (TTL 90d on playedAt):
+  - Fields: userId, spotifyId, trackName, artistName, albumId, albumName, durationMs, playedAt, playedAtRounded10s, source, device, clientVersion, isScrobbled, isSkip, isPaused
+  - Indexes: unique(userId, spotifyId, playedAtRounded10s); (userId, playedAt:-1); TTL(playedAt)
+- **trackstats**:
+  - Fields: userId, trackId, trackKey, trackName, artistName, albumName, albumArt, playCount, lastPlayedAt, replayGuardAt
+  - Indexes: unique(userId, trackKey); (userId, playCount:-1); (userId, lastPlayedAt:-1)
+- **albumstats**:
+  - Fields: userId, albumId, albumKey, albumName, artistName, albumArt, totalTracks, playCount, albumPlayCount, uniqueTracksPlayed[], lastPlayedAt, lastCompletedAt
+  - Indexes: unique(userId, albumKey); (userId, albumPlayCount:-1); (userId, lastPlayedAt:-1)
+- **userstatssummaries**:
+  - Fields: userId, totalMinutes, totalScrobbles, uniqueArtistsCount, lastScrobbled{spotifyId, trackName, artistName, albumName, playedAt}
+  - Indexes: unique(userId)
+- **reviews, reviewcomments**: as-is with existing indexes
+- **cache.albums, cache.tracks** (optional, TTL 30d):
+  - Minimal Spotify shapes with lastSeenAt for TTL
 
-## Engineering Best Practices (expanded)
-- Always `.select()` the minimal fields and use `.lean()` on read-heavy Mongoose queries.
-- Cache or batch Spotify API calls; never call per-item in hot paths.
-- Prefer stable keys: `albumKey = albumId || albumName`, `trackKey = spotifyId || (artist+trackName)`.
-- Be explicit with types across the wire (shared types or duplicated interfaces kept in sync).
-- When adding optional fields (e.g., `albumId`), update:
-  - Mongoose schema
-  - API `.select()` clauses
-  - Mobile API types and aggregators
-  - Any seed scripts and diagnostics
+## Engineering Best Practices
+- Always `.select()` minimal fields and `.lean()` on Mongoose queries
+- Use deterministic keys: `albumKey = albumId || albumName`, `trackKey = spotifyId || artist+trackName`
+- Idempotent operations: safe to retry/re-run
+- JWT for auth; no x-user-id trust from clients
+- Rate limit write endpoints (batch-upsert 10/s burst, 100/min)
+- gzip + ETag on cacheable GETs
+- Default pagination: limit=20 (max=100)
+- Spotify calls: map to minimal shapes, cache hot lookups, never proxy raw responses
+- Album logic: only process if `totalTracks >= 4`
+- Replay guard: ignore same track if last play <15 min ago
+- TTL cleanup: MongoDB handles via TTL index; device archive is primary long-term storage
 
 ## 🚨 CRITICAL: Terminal/Server Testing Rules
 
@@ -157,12 +173,34 @@ run_in_terminal("Start-Sleep -Seconds 8; curl http://localhost:5000/ping", isBac
 get_task_output(id="shell: Server")
 ```
 
-## Debugging Process Checklist
-1) Reproduce and capture logs (mobile console + server).
-2) Trace the field from UI → API client → API route → DB schema → seed/data source.
-3) Validate with one real record end-to-end.
-4) Add defensive fallbacks (e.g., use `albumName` when `albumId` missing), but prioritize fixing the source.
-5) Add a tiny test/seed to prevent regression (e.g., `add-test-scrobbles.ts`).
+## V2 Implementation Roadmap (Fast Track)
+
+### Phase 1: Server Foundation (Hours 1–6)
+- Update models: add fields (playedAtRounded10s, isScrobbled, replayGuardAt, uniqueTracksPlayed), indexes
+- Create `/server/src/routes/v2/` structure: index.ts, scrobbles.ts, stats.ts, track.ts, album.ts, artist.ts
+- Implement batch-upsert with full logic (40% threshold, dedup, replay guard, album completion 70%)
+- Add JWT middleware (mint/verify), gzip, ETag, rate-limit
+- Create SpotifyService (getAlbumTotalTracks cached, minimal mappers)
+- Wire v2 routes, add env flags (SCROBBLES_TTL_DAYS=90, FEATURE_FLAG_V2_ENABLED=1)
+- Test locally: curl/Postman batch-upsert, verify dedup, album logic, stats endpoints
+
+### Phase 2: Mobile Client (Hours 7–12)
+- Update ScrobbleContext: local queue, 40% detection, calculate playedAtRounded10s, batch sync job (POST every 30s)
+- Add archive job: on focus + charger/Wi-Fi, GET archive-ready, save SQLite, POST ack-archive
+- Update SQLite schema for archive table
+- Update home screen: skeleton + staggered calls (/v2/stats/summary, /v2/scrobbles/recent?limit=10, /v2/stats/albums?limit=5)
+- Test: play tracks, verify queue, sync, stats update, archive flow
+
+### Phase 3: UI Polish (Hours 13–16)
+- Create MUI3 Paper screens: Home (stats cards), History (list), AlbumDetail (progress bar), Profile
+- Use Paper elevation, rounded corners, consistent spacing
+- Test incremental loading, verify payloads <30KB
+
+### Phase 4: Deploy & Validate (Hours 17–20)
+- Deploy server to Render with new env flags
+- Smoke tests: auth, scrobble, stats, archive
+- Monitor logs, payload sizes
+- Final acceptance: no duplicates, album completion working, JWT auth, rate limits enforced
 
 ## Local Testing Guide (Beta Phase)
 
@@ -219,6 +257,54 @@ npm run start
 ✅ Mobile screens, components, services  
 ❌ Never commit `server/.env` (already gitignored)  
 ❌ Never hardcode localhost in committed code
+
+## 🚨 CRITICAL: Terminal/Server Testing Rules
+
+### NEVER do this (WRONG):
+```bash
+# ❌ BAD: Start server as background task, then run commands in same terminal
+run_in_terminal("cd server; npm run dev", isBackground=true)
+run_in_terminal("curl http://localhost:5000/ping")  # This STOPS the server first!
+```
+
+### ALWAYS do this (CORRECT):
+```bash
+# ✅ GOOD: Start server using VS Code task (separate terminal)
+run_task(id="shell: Server")
+# Wait for server to start
+run_in_terminal("Start-Sleep -Seconds 8; curl http://localhost:5000/ping")
+```
+
+### Why This Matters:
+- When you run a command in a terminal, PowerShell **stops any background process** first
+- Server started with `isBackground=true` is **NOT in a separate terminal** - it's just backgrounded in the same session
+- Next command in that terminal **kills the background server** before running
+- **SOLUTION**: Always use `run_task()` for long-running servers - this creates a truly separate terminal
+
+### Testing Servers Correctly:
+1. **Start server**: Use `run_task(id="shell: Server")` (creates dedicated terminal)
+2. **Wait**: Add `Start-Sleep -Seconds 5-8` before testing (server needs time to start)
+3. **Test**: Run test commands in a **NEW terminal** (separate `run_in_terminal` call)
+4. **Verify**: Check task output with `get_task_output()` to see server logs
+
+### Example (Correct Flow):
+```bash
+# Step 1: Start server in dedicated terminal
+run_task(id="shell: Server", workspaceFolder="...")
+
+# Step 2: Wait and test in separate terminal
+run_in_terminal("Start-Sleep -Seconds 8; curl http://localhost:5000/ping", isBackground=false)
+
+# Step 3: Check server logs
+get_task_output(id="shell: Server")
+```
+
+## Debugging Process Checklist
+1) Reproduce and capture logs (mobile console + server).
+2) Trace the field from UI → API client → API route → DB schema → seed/data source.
+3) Validate with one real record end-to-end.
+4) Add defensive fallbacks (e.g., use `albumName` when `albumId` missing), but prioritize fixing the source.
+5) Add a tiny test/seed to prevent regression (e.g., `add-test-scrobbles.ts`).
 
 ## Seed/Test Data
 - Script: `server/add-test-scrobbles.ts` – seeds 3 canonical albums with ~40–45% completion.

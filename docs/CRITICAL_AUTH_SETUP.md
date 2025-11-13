@@ -4,6 +4,20 @@
 
 ---
 
+## ⚠️ SPOTIFY REDIRECT URI REQUIREMENTS (Official Docs)
+
+**From Spotify Documentation:**
+> **`localhost` is NOT allowed as redirect URI.**
+> 
+> For local development with loopback addresses, use **explicit IPv4 or IPv6**:
+> - ✅ CORRECT: `http://127.0.0.1:PORT`
+> - ✅ CORRECT: `http://[::1]:PORT` (IPv6)
+> - ❌ WRONG: `http://localhost:PORT` (forbidden by Spotify)
+
+**Source:** https://developer.spotify.com/documentation/web-api/concepts/redirect_uri
+
+---
+
 ## Step 1: Add Redirect URIs to Spotify Dashboard
 
 1. **Go to**: https://developer.spotify.com/dashboard
@@ -15,47 +29,46 @@
 
 ### Development URIs (Required for testing):
 ```
-http://localhost:8081
 http://127.0.0.1:8081
-http://192.168.42.205:8081
 ```
 
 **⚠️ IMPORTANT FOR WEB**: 
-- You MUST access the app via `http://localhost:8081` or `http://127.0.0.1:8081`
-- **DO NOT use `http://192.168.x.x:8081`** - WebCrypto API won't work (browser security)
-- LAN IP is only needed for **mobile device testing** (scanning QR code)
+- Spotify **REQUIRES** `127.0.0.1` (explicit IPv4), NOT `localhost`
+- You MUST access the app via `http://127.0.0.1:8081`
+- **DO NOT use `http://localhost:8081`** - Spotify will reject it!
+- **DO NOT use `http://192.168.x.x:8081`** - WebCrypto API won't work + Spotify will reject
+
+### Mobile Deep Link URI:
+```
+ratesangeet://callback
+```
 
 ### Production URIs (Add these too):
 ```
-https://ratesangeet.onrender.com
 https://ratesangeet.onrender.com/api/auth/callback
-https://ratesangeet.onrender.com/api/auth/callback/mobile
 ```
 
 7. **Click**: "Save" (bottom of the modal)
-8. **Verify**: All 6 URIs appear in the list
+8. **Verify**: All URIs appear in the list
 
 ---
 
 ## Step 2: Test Web Login
 
-### Access via LOCALHOST (Critical!)
+### Access via 127.0.0.1 (REQUIRED!)
 
-1. **Expo shows**:
-   ```
-   › Web is waiting on http://localhost:8081
+1. **Start Expo**:
+   ```powershell
+   cd mobile
+   npm run start
    ```
 
 2. **Open in your browser** (on same computer):
    ```
-   http://localhost:8081
-   ```
-   **OR**
-   ```
    http://127.0.0.1:8081
    ```
    
-   **⚠️ DO NOT use `http://192.168.x.x:8081`** - Browser's WebCrypto API requires localhost or HTTPS!
+   **⚠️ MUST use `127.0.0.1`** - Spotify requires explicit IPv4 loopback address!
 
 3. **Click**: "Login with Spotify"
 

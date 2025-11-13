@@ -25,7 +25,8 @@ const getDefaultApiUrl = () => {
     return 'http://127.0.0.1:5000/api';
   }
   if (Platform.OS === 'web') {
-    return 'http://192.168.42.205:5000/api';
+    // Web dev: Use 127.0.0.1 (required for Spotify redirect URIs)
+    return 'http://127.0.0.1:5000/api';
   }
   return 'http://127.0.0.1:5000/api';
 };

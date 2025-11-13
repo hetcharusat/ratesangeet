@@ -225,6 +225,8 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 });
 
+// POST /callback - for client-side code exchange (alternative web flow)
+router.post('/callback', async (req: Request, res: Response) => {
   const { code, redirectUri, codeVerifier, target } = req.body as { code?: string; redirectUri?: string; codeVerifier?: string; target?: string };
 
   console.log('📱 /auth/callback received:', {

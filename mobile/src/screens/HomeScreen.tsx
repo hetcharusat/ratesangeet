@@ -5,6 +5,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../context/AuthContext';
 import { getListeningStats, getCurrentlyPlaying } from '../services/api';
 import SkeletonLine from '../components/ui/SkeletonLine';
+import NowPlayingCard from '../components/NowPlayingCard';
 
 type StatsSummary = {
   totalMinutes?: number;
@@ -21,6 +22,14 @@ type CurrentTrack = {
     name: string;
     images: { url: string }[];
   };
+  duration_ms?: number;
+};
+
+type PlayingState = {
+  track: CurrentTrack | null;
+  isPlaying: boolean;
+  progressMs: number;
+  durationMs: number;
 };
 
 export default function HomeScreen({ navigation }: any) {
@@ -30,8 +39,12 @@ export default function HomeScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<StatsSummary>({});
-  const [currentTrack, setCurrentTrack] = useState<CurrentTrack | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playingState, setPlayingState] = useState<PlayingState>({
+    track: null,
+    isPlaying: false,
+    progressMs: 0,
+    durationMs: 0,
+  });
   const scrollY = new Animated.Value(0);
 
   const fetchData = async () => {
@@ -51,20 +64,32 @@ export default function HomeScreen({ navigation }: any) {
         totalReviews: 0, // Will be fetched from reviews API later
       });
 
-      // Fetch currently playing
+      // Fetch currently playing with progress
       try {
         const nowPlaying = await getCurrentlyPlaying(accessToken);
         if (nowPlaying.isPlaying && nowPlaying.track) {
-          setCurrentTrack(nowPlaying.track);
-          setIsPlaying(true);
+          setPlayingState({
+            track: nowPlaying.track,
+            isPlaying: true,
+            progressMs: nowPlaying.progressMs || 0,
+            durationMs: nowPlaying.track.duration_ms || 0,
+          });
         } else {
-          setCurrentTrack(null);
-          setIsPlaying(false);
+          setPlayingState({
+            track: null,
+            isPlaying: false,
+            progressMs: 0,
+            durationMs: 0,
+          });
         }
       } catch (err) {
         console.log('[HOME] Not playing anything currently');
-        setCurrentTrack(null);
-        setIsPlaying(false);
+        setPlayingState({
+          track: null,
+          isPlaying: false,
+          progressMs: 0,
+          durationMs: 0,
+        });
       }
     } catch (error) {
       console.error('[HOME] Error fetching data:', error);
@@ -76,6 +101,85 @@ export default function HomeScreen({ navigation }: any) {
   useEffect(() => {
     fetchData();
   }, [user?.id]);
+
+  // Smart polling for currently playing track (pattern-based)
+  useEffect(() => {
+    if (!accessToken) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const smartPoll = async () => {
+      try {
+        const nowPlaying = await getCurrentlyPlaying(accessToken);
+        
+        if (nowPlaying.isPlaying && nowPlaying.track) {
+          const trackChanged = nowPlaying.track.id !== playingState.track?.id;
+          
+          setPlayingState({
+            track: nowPlaying.track,
+            isPlaying: true,
+            progressMs: nowPlaying.progressMs || 0,
+            durationMs: nowPlaying.track.duration_ms || 0,
+          });
+
+          // Calculate smart next check interval
+          const progressMs = nowPlaying.progressMs || 0;
+          const durationMs = nowPlaying.track.duration_ms || 180000;
+          const timeLeftMs = durationMs - progressMs;
+          const scrobblePointMs = durationMs * 0.5;
+          
+          let nextCheckMs;
+          
+          if (trackChanged || progressMs < 5000) {
+            // New track or just started - check at 5s mark
+            nextCheckMs = Math.max(5000 - progressMs, 5000);
+          } else if (progressMs < 15000) {
+            // Early skip window - check at 15s
+            nextCheckMs = Math.max(15000 - progressMs, 5000);
+          } else if (progressMs < scrobblePointMs) {
+            // Before scrobble point - check at 50% mark
+            nextCheckMs = Math.max(scrobblePointMs - progressMs, 5000);
+          } else if (timeLeftMs > 6000) {
+            // After scrobble, not near end - check at 60% mark or end
+            const sixtyPercentMs = durationMs * 0.6;
+            if (progressMs < sixtyPercentMs) {
+              nextCheckMs = Math.max(sixtyPercentMs - progressMs, 5000);
+            } else {
+              nextCheckMs = Math.max(timeLeftMs - 3000, 5000);
+            }
+          } else {
+            // Near end - check before track ends
+            nextCheckMs = Math.max(timeLeftMs - 1000, 2000);
+          }
+          
+          // Safety caps: min 5s, max 30s
+          nextCheckMs = Math.max(5000, Math.min(30000, nextCheckMs));
+          
+          console.log(`[HOME] Next check in ${Math.round(nextCheckMs / 1000)}s`);
+          timeoutId = setTimeout(smartPoll, nextCheckMs);
+        } else {
+          // Not playing - check every 30s
+          setPlayingState({
+            track: null,
+            isPlaying: false,
+            progressMs: 0,
+            durationMs: 0,
+          });
+          timeoutId = setTimeout(smartPoll, 30000);
+        }
+      } catch (err) {
+        console.log('[HOME] Polling error:', err);
+        // Retry in 30s on error
+        timeoutId = setTimeout(smartPoll, 30000);
+      }
+    };
+
+    smartPoll();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [accessToken]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -180,36 +284,24 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Currently Playing - Only show if playing */}
-        {isPlaying && currentTrack && (
-          <Card style={[styles.nowPlayingCard, { backgroundColor: theme.colors.surfaceVariant }]} mode="contained">
-            <Card.Content style={styles.nowPlayingContent}>
-              <View style={styles.nowPlayingLeft}>
-                <Image
-                  source={{ uri: currentTrack.album.images[0]?.url || 'https://via.placeholder.com/64' }}
-                  style={styles.albumCover}
-                />
-                <View style={styles.trackInfo}>
-                  <Text variant="titleMedium" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>
-                    {currentTrack.name}
-                  </Text>
-                  <Text variant="bodySmall" numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant }}>
-                    {currentTrack.artists.map(a => a.name).join(', ')}
-                  </Text>
-                </View>
-              </View>
-              <IconButton
-                icon="star-outline"
-                size={24}
-                iconColor={theme.colors.primary}
-                onPress={() => {
-                  // Navigate to rate/review screen
-                  navigation.navigate('AlbumDetail', { albumId: currentTrack.album });
-                }}
-                style={styles.rateButton}
-              />
-            </Card.Content>
-          </Card>
+        {/* Currently Playing - Full width, aligned with stats grid */}
+        {playingState.track && (
+          <View style={{ paddingHorizontal: 0 }}>
+            <NowPlayingCard
+              track={playingState.track}
+              progressMs={playingState.progressMs}
+              durationMs={playingState.durationMs}
+              isPlaying={playingState.isPlaying}
+              onRate={() => {
+                // Navigate to rate/review screen
+                navigation.navigate('AddReview', {
+                  trackId: playingState.track?.id,
+                  trackName: playingState.track?.name,
+                  artistName: playingState.track?.artists.map(a => a.name).join(', '),
+                });
+              }}
+            />
+          </View>
         )}
       </ScrollView>
 
@@ -282,35 +374,7 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     fontFamily: 'System', // Apple San Francisco on iOS
   },
-  nowPlayingCard: {
-    marginTop: 4,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  nowPlayingContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  nowPlayingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  albumCover: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-  },
-  trackInfo: {
-    flex: 1,
-  },
-  rateButton: {
-    margin: 0,
-  },
+
   fab: {
     position: 'absolute',
     right: 16,

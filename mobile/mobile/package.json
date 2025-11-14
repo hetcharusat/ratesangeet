@@ -1,6 +1,15 @@
 {
   "dependencies": {
     "react-native-paper": "^5.14.5",
-    "react-native-safe-area-context": "^5.6.2"
+    "react-native-safe-area-context": "^5.6.2",
+    "expo": "~54.0.16",
+    "react": "19.1.0",
+    "react-native": "0.81.4"
+  },
+  "name": "mobile",
+  "version": "1.0.0",
+  "scripts": {
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   }
 }

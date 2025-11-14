@@ -23,7 +23,99 @@ const theme = md3BaselineLight;
 function AppNavigator() {
   const { user, isLoading, setAuth } = useAuth();
 
-  // Handle deep link callback from Spotify OAuth
+  // Handle web OAuth callback (runs before navigation decision)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const handleWebCallback = async () => {
+      // Skip callback handling if already authenticated
+      if (auth.accessToken) {
+        console.log('🔍 [App] Already authenticated, skipping callback handler');
+        return;
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const errorParam = urlParams.get('error');
+
+      console.log('🔍 [App] Callback check:', { hasCode: !!code, hasError: !!errorParam });
+
+      // No OAuth params = not a callback
+      if (!code && !errorParam) return;
+
+      console.log('✅ [App] OAuth callback detected! Processing...');
+
+      // Clear URL immediately (security: don't leave code in history)
+      window.history.replaceState({}, document.title, '/');
+
+      // Handle Spotify error
+      if (errorParam) {
+        console.error('❌ Spotify OAuth error:', errorParam);
+        Alert.alert('Authentication Failed', errorParam);
+        return;
+      }
+
+      if (!code) return;
+
+      try {
+        // Retrieve PKCE parameters from storage
+        const storedVerifier = localStorage.getItem('spotify_code_verifier');
+        const storedState = localStorage.getItem('spotify_state');
+        const storedRedirectUri = localStorage.getItem('spotify_redirect_uri');
+
+        if (!storedVerifier) {
+          throw new Error('Code verifier not found. Please try logging in again.');
+        }
+
+        // Validate state (CSRF protection)
+        if (state !== storedState) {
+          throw new Error('Invalid state parameter. Possible CSRF attack.');
+        }
+
+        console.log('🔑 [App] Exchanging authorization code for tokens...');
+
+        // Exchange code for tokens via backend
+        const response = await fetch(`${config.API_URL}/auth/callback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code,
+            codeVerifier: storedVerifier,
+            redirectUri: storedRedirectUri,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || data.message || 'Authentication failed');
+        }
+
+        console.log('✅ [App] Login successful!');
+
+        // Clear stored PKCE params
+        localStorage.removeItem('spotify_code_verifier');
+        localStorage.removeItem('spotify_state');
+        localStorage.removeItem('spotify_redirect_uri');
+
+        // Save auth state
+        setAuth(
+          data.data.accessToken,
+          data.data.refreshToken,
+          data.data.user
+        );
+
+      } catch (error: any) {
+        console.error('❌ [App] Token exchange failed:', error);
+        Alert.alert('Login Failed', error.message || 'Authentication failed');
+      }
+    };
+
+    handleWebCallback();
+  }, [setAuth]);
+
+  // Handle deep link callback from Spotify OAuth (mobile)
   useEffect(() => {
     const handleDeepLink = async (event: { url: string }) => {
       const url = event.url;

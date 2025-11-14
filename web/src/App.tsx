@@ -6,6 +6,7 @@ import { AppLayout } from './layout/AppLayout';
 import { HomeScreen } from './screens/HomeScreen';
 import { HistoryScreen } from './screens/HistoryScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import WavyProgressTestScreen from './screens/WavyProgressTestScreen';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<HomeScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/profile" element={<ProfileScreen />} />
+          <Route path="/test/wavy-progress" element={<WavyProgressTestScreen />} />
         </Route>
       </Routes>
     </ThemeProvider>

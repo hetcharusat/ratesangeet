@@ -18,6 +18,8 @@ import scrobbleV2Routes from './scrobbleV2.js'; // V2: Server-assisted scrobblin
 
 // V2 API routes (new minimal payload architecture)
 import v2ScrobblesRoutes from './v2/scrobbles.js';
+import v2StatsRoutes from './v2/stats.js';
+import v2MusicRoutes from './v2/music.js';
 
 const router = Router();
 
@@ -29,6 +31,8 @@ router.use('/stats', statsGroup);         // /api/stats/* (grouped)
 
 // V2 API routes (hybrid normalization architecture)
 router.use('/v2/scrobbles', v2ScrobblesRoutes); // /api/v2/scrobbles/* (hybrid storage)
+router.use('/v2/stats', v2StatsRoutes);         // /api/v2/stats/* (minimal stats)
+router.use('/v2', v2MusicRoutes);               // /api/v2/now-playing, /api/v2/playing-progress
 
 // New production routes
 router.use('/home', homeRoutes);          // /api/home/* (aggregated snapshot)

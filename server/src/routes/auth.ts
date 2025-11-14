@@ -225,79 +225,71 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 });
 
-// POST /callback - for client-side code exchange (alternative web flow)
+// POST /callback - PKCE token exchange (unified for web + mobile)
 router.post('/callback', async (req: Request, res: Response) => {
-  const { code, redirectUri, codeVerifier, target } = req.body as { code?: string; redirectUri?: string; codeVerifier?: string; target?: string };
+  const { code, redirectUri, codeVerifier } = req.body as { 
+    code?: string; 
+    redirectUri?: string; 
+    codeVerifier?: string;
+  };
 
-  console.log('📱 /auth/callback received:', {
-    code: code?.substring(0, 20) + '...',
-    redirectUri,
-    target,
+  console.log('🔑 /auth/callback - PKCE token exchange:', {
+    hasCode: !!code,
     hasCodeVerifier: !!codeVerifier,
-    platform: codeVerifier ? 'PKCE (mobile)' : 'Client Secret (web)',
+    redirectUri,
   });
 
+  // Validate required parameters
   if (!code) {
-    return res.status(400).json({ error: 'Authorization code required' });
+    return res.status(400).json({ 
+      success: false,
+      error: 'Authorization code required' 
+    });
+  }
+
+  if (!codeVerifier) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Code verifier required (PKCE flow)' 
+    });
+  }
+
+  if (!redirectUri) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Redirect URI required' 
+    });
   }
 
   try {
-    // Exchange code for tokens
-    let tokenResponse;
-    const tokenParams = new URLSearchParams();
-    tokenParams.set('grant_type', 'authorization_code');
-    tokenParams.set('code', code);
-    
-    // Determine final redirect URI (MUST match what was used in authorization request)
-    let finalRedirectUri = redirectUri;
-    if (!finalRedirectUri) {
-      finalRedirectUri = target === 'mobile'
-        ? (process.env.SPOTIFY_REDIRECT_URI_MOBILE || process.env.SPOTIFY_REDIRECT_URI)
-        : (process.env.SPOTIFY_REDIRECT_URI_WEB || process.env.SPOTIFY_REDIRECT_URI);
-    }
-    
-    tokenParams.set('redirect_uri', finalRedirectUri || '');
-    
-    console.log('🔑 Token exchange with Spotify:', {
-      redirectUri: finalRedirectUri,
-      grantType: 'authorization_code',
-      hasPKCE: !!codeVerifier,
+    // Exchange code for tokens using PKCE (public client - NO client secret)
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri, // MUST match the one used in auth request
+      client_id: process.env.SPOTIFY_CLIENT_ID || '',
+      code_verifier: codeVerifier, // PKCE proof
     });
 
-    if (codeVerifier) {
-      // PKCE exchange without client secret (public client)
-      tokenParams.set('client_id', process.env.SPOTIFY_CLIENT_ID || '');
-      tokenParams.set('code_verifier', codeVerifier);
-      tokenResponse = await axios.post(
-        SPOTIFY_TOKEN_URL,
-        tokenParams,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
-    } else {
-      // Confidential client exchange using client secret
-      tokenResponse = await axios.post(
-        SPOTIFY_TOKEN_URL,
-        tokenParams,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: `Basic ${Buffer.from(
-              `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-            ).toString('base64')}`,
-          },
-        }
-      );
-    }
-    
-  console.log('✅ Token exchange successful');
+    console.log('📤 Exchanging code with Spotify (PKCE)...');
+
+    // CRITICAL: NO Authorization header with client secret!
+    // PKCE is for PUBLIC clients (mobile apps, SPAs)
+    const tokenResponse = await axios.post(
+      SPOTIFY_TOKEN_URL,
+      tokenParams,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    console.log('✅ Token exchange successful');
 
     const { access_token, refresh_token } = tokenResponse.data;
 
-    // Get user profile
+    // Get user profile from Spotify
     const userResponse = await axios.get('https://api.spotify.com/v1/me', {
       headers: { Authorization: `Bearer ${access_token}` },
     });
@@ -314,35 +306,31 @@ router.post('/callback', async (req: Request, res: Response) => {
       user.accessToken = access_token;
       user.refreshToken = refresh_token;
       user.profileImage = userData.images?.[0]?.url;
-      // Token health tracking
-      // @ts-ignore optional fields exist on model
+      // @ts-ignore
       user.tokenStatus = 'active';
       // @ts-ignore
       user.lastTokenRefreshAt = new Date();
       // @ts-ignore
       user.consecutiveRefreshFailures = 0;
+      
       if (!user.username) {
-        // Assign random unique username if missing
         const base = (user.displayName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
         let candidate = base;
         let suffix = 0;
-        // Ensure uniqueness
-        // eslint-disable-next-line no-constant-condition
         while (await User.findOne({ username: candidate })) {
           suffix += 1;
           candidate = `${base}${suffix}`;
         }
         user.username = candidate;
       }
+      
       await user.save();
       console.log('✅ Updated existing user:', user.displayName);
     } else {
       // Create new user
-      // Assign a random unique username at creation
       const base = (userData.display_name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
       let candidate = base;
       let suffix = 0;
-      // eslint-disable-next-line no-constant-condition
       while (await User.findOne({ username: candidate })) {
         suffix += 1;
         candidate = `${base}${suffix}`;
@@ -362,6 +350,7 @@ router.post('/callback', async (req: Request, res: Response) => {
       console.log('✅ Created new user:', user.displayName);
     }
 
+    // Return tokens via secure JSON (NOT via redirect/deep link)
     return transitionalSuccess(res, {
       accessToken: access_token,
       refreshToken: refresh_token,
@@ -375,124 +364,19 @@ router.post('/callback', async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    const mapped = mapSpotifyAuthError(error, redirectUri || process.env.SPOTIFY_REDIRECT_URI);
-    console.error('❌ Spotify auth error:', mapped.status, mapped.errorCode, mapped.details);
+    const mapped = mapSpotifyAuthError(error, redirectUri);
+    console.error('❌ PKCE token exchange failed:', {
+      status: mapped.status,
+      errorCode: mapped.errorCode,
+      message: mapped.message,
+      details: mapped.details,
+    });
+    
     return respondError(res, mapped.message || 'Authentication failed', mapped.status, {
       errorCode: mapped.errorCode,
       details: mapped.details,
       usedRedirectUri: mapped.usedRedirectUri,
     });
-  }
-});
-
-// Mobile OAuth Callback - Spotify redirects here, then we redirect to app with tokens
-router.get('/callback/mobile', async (req: Request, res: Response) => {
-  const { code, error } = req.query;
-
-  if (error) {
-    console.error('❌ Spotify OAuth error:', error);
-    return res.redirect(`ratesangeet://callback?error=${error}`);
-  }
-
-  if (!code) {
-    return res.redirect('ratesangeet://callback?error=missing_code');
-  }
-
-  try {
-    // Exchange code for tokens
-    const tokenParams = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: code as string,
-      redirect_uri: process.env.SPOTIFY_REDIRECT_URI_MOBILE || '',
-    });
-
-    const tokenResponse = await axios.post(
-      SPOTIFY_TOKEN_URL,
-      tokenParams,
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${Buffer.from(
-            `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-          ).toString('base64')}`,
-        },
-      }
-    );
-
-    const { access_token, refresh_token } = tokenResponse.data;
-
-    // Get user profile
-    const userResponse = await axios.get('https://api.spotify.com/v1/me', {
-      headers: { Authorization: `Bearer ${access_token}` },
-    });
-
-    const userData = userResponse.data;
-
-    // Save or update user in database
-    let user = await User.findOne({ spotifyId: userData.id });
-    
-    if (user) {
-      // Update existing user
-      user.displayName = userData.display_name;
-      user.email = userData.email;
-      user.accessToken = access_token;
-      user.refreshToken = refresh_token;
-      user.profileImage = userData.images?.[0]?.url;
-      // @ts-ignore
-      user.tokenStatus = 'active';
-      // @ts-ignore
-      user.lastTokenRefreshAt = new Date();
-      // @ts-ignore
-      user.consecutiveRefreshFailures = 0;
-      if (!user.username) {
-        const base = (user.displayName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
-        let candidate = base;
-        let suffix = 0;
-        while (await User.findOne({ username: candidate })) {
-          suffix += 1;
-          candidate = `${base}${suffix}`;
-        }
-        user.username = candidate;
-      }
-      await user.save();
-    } else {
-      // Create new user
-      const base = (userData.display_name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'user';
-      let candidate = base;
-      let suffix = 0;
-      while (await User.findOne({ username: candidate })) {
-        suffix += 1;
-        candidate = `${base}${suffix}`;
-      }
-      user = new User({
-        spotifyId: userData.id,
-        displayName: userData.display_name,
-        email: userData.email,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        profileImage: userData.images?.[0]?.url,
-        username: candidate,
-      });
-      await user.save();
-    }
-
-    console.log('✅ Mobile auth successful, redirecting to app...');
-
-    // Redirect to app with tokens
-    const appRedirect = `ratesangeet://callback?` + new URLSearchParams({
-      accessToken: access_token,
-      refreshToken: refresh_token,
-      userId: String(user._id),
-      displayName: user.displayName,
-      email: user.email || '',
-      profileImage: user.profileImage || '',
-      username: user.username || '',
-    }).toString();
-
-    return res.redirect(appRedirect);
-  } catch (error: any) {
-    console.error('❌ Mobile callback error:', error.response?.data || error.message);
-    return res.redirect(`ratesangeet://callback?error=auth_failed`);
   }
 });
 

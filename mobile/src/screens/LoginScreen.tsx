@@ -1,70 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Image, Platform, Linking } from 'react-native';
+/**
+ * LoginScreen - Production-Ready OAuth 2.0 PKCE Implementation
+ * 
+ * Features:
+ * - RFC 7636 compliant PKCE flow
+ * - Platform-aware (Web + Mobile native)
+ * - Secure token handling (no tokens in URLs/deep links)
+ * - State validation (CSRF protection)
+ * - Proper error handling
+ * - Works in Expo Dev Build and Production
+ * 
+ * Flow:
+ * 1. User clicks login
+ * 2. Generate PKCE params (verifier, challenge, state)
+ * 3. Store verifier + state securely (localStorage/memory)
+ * 4. Redirect to Spotify with challenge
+ * 5. Spotify redirects back with code
+ * 6. Validate state
+ * 7. Exchange code + verifier for tokens via backend
+ * 8. Backend returns tokens via secure JSON
+ * 9. Store tokens and navigate to app
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Image, Platform } from 'react-native';
 import { Button, Text, useTheme, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
-import * as Crypto from 'expo-crypto';
 import { useAuth } from '../context/AuthContext';
-import { Motion } from '../theme/tokens';
 import config from '../config';
+import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
+import { getRedirectUri } from '../utils/redirectUri';
+import { SPOTIFY_CONFIG } from '../utils/spotifyConfig';
 
-// Required for WebBrowser to work properly on mobile
+// Required for WebBrowser to work on mobile
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
 }
-
-// PKCE helper functions (Web-compatible)
-const generateCodeVerifier = async (): Promise<string> => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.crypto) {
-    // Use browser's native crypto API (works on http://localhost)
-    const array = new Uint8Array(32);
-    window.crypto.getRandomValues(array);
-    return base64URLEncode(array.buffer);
-  } else {
-    // Use expo-crypto for mobile
-    const randomBytes = Crypto.getRandomBytes(32);
-    return base64URLEncode(randomBytes);
-  }
-};
-
-const generateCodeChallenge = async (codeVerifier: string): Promise<string> => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.crypto?.subtle) {
-    // Use browser's native SubtleCrypto API
-    const encoder = new TextEncoder();
-    const data = encoder.encode(codeVerifier);
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-    return base64URLEncode(hashBuffer);
-  } else {
-    // Use expo-crypto for mobile
-    const hashed = await Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      codeVerifier
-    );
-    return base64URLEncode(hashed);
-  }
-};
-
-const base64URLEncode = (input: string | ArrayBuffer): string => {
-  let base64: string;
-  
-  if (typeof input === 'string') {
-    base64 = btoa(input);
-  } else {
-    // ArrayBuffer to base64
-    const bytes = new Uint8Array(input);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    base64 = btoa(binary);
-  }
-  
-  return base64
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-};
 
 export default function LoginScreen() {
   const { setAuth } = useAuth();
@@ -72,200 +44,169 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
-  
-  // Generate redirect URI based on platform and environment
-  const getRedirectUri = (): string => {
-    if (Platform.OS === 'web') {
-      // Use current origin (works with localhost OR 127.0.0.1)
-      // User can access via either URL, we match what they're using
-      if (typeof window !== 'undefined') {
-        const origin = window.location.origin;
-        console.log('🔗 Web redirect URI (from origin):', origin);
-        return origin;
+  const [loginSuccessful, setLoginSuccessful] = useState(false);
+
+  /**
+   * Handle OAuth callback on web
+   * 
+   * Triggered when Spotify redirects back with code parameter
+   * Validates state and exchanges code for tokens
+   */
+  const handleWebCallback = useCallback(async () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const errorParam = urlParams.get('error');
+
+    console.log('🔍 Callback check:', { hasCode: !!code, hasError: !!errorParam, state });
+
+    // No OAuth params = not a callback
+    if (!code && !errorParam) {
+      console.log('ℹ️ No OAuth params, skipping callback');
+      return;
+    }
+
+    console.log('✅ OAuth callback detected! Processing...');
+
+    // Clear URL immediately (security: don't leave code in history)
+    window.history.replaceState({}, document.title, '/');
+
+    // Handle Spotify error
+    if (errorParam) {
+      console.error('❌ Spotify OAuth error:', errorParam);
+      setError(`Authentication failed: ${errorParam}`);
+      setSnackbarVisible(true);
+      return;
+    }
+
+    // Missing code (shouldn't happen)
+    if (!code) {
+      setError('No authorization code received');
+      setSnackbarVisible(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Retrieve PKCE parameters from storage
+      const storedVerifier = localStorage.getItem(SPOTIFY_CONFIG.STORAGE_KEYS.CODE_VERIFIER);
+      const storedState = localStorage.getItem(SPOTIFY_CONFIG.STORAGE_KEYS.STATE);
+      const storedRedirectUri = localStorage.getItem(SPOTIFY_CONFIG.STORAGE_KEYS.REDIRECT_URI);
+
+      // Validate we have required data
+      if (!storedVerifier) {
+        throw new Error('Code verifier not found. Please try logging in again.');
       }
-      // Fallback
-      return 'http://localhost:8081';
-    } else {
-      // Mobile uses custom scheme
-      return 'ratesangeet://callback';
-    }
-  };
 
-  // Handle URL parameters on web (code from Spotify callback)
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      const handleWebCallback = async () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
-        const errorParam = urlParams.get('error');
-        
-        if (errorParam) {
-          console.error('❌ Auth error:', errorParam);
-          setError(`Authentication failed: ${errorParam}`);
-          setSnackbarVisible(true);
-          window.history.replaceState({}, document.title, '/');
-          return;
-        }
-        
-        if (code && state) {
-          setLoading(true);
-          try {
-            console.log('🔑 Exchanging code with server...');
-            
-            // Retrieve codeVerifier from localStorage (per Spotify docs)
-            const codeVerifier = localStorage.getItem('spotify_code_verifier');
-            const redirectUri = localStorage.getItem('spotify_redirect_uri');
-            
-            if (!codeVerifier) {
-              throw new Error('Code verifier missing from storage');
-            }
-            
-            // Exchange code for tokens via server
-            const response = await fetch(`${config.API_URL}/auth/callback`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                code,
-                redirectUri: redirectUri || getRedirectUri(),
-                codeVerifier,
-                target: 'web',
-              }),
-            });
-            
-            const data = await response.json();
-            
-            if (data.success && data.data) {
-              console.log('✅ Server auth successful');
-              
-              // Save auth data
-              await setAuth({
-                accessToken: data.data.accessToken,
-                refreshToken: data.data.refreshToken,
-                user: data.data.user,
-              });
-              
-              console.log('✅ Auth stored, user logged in');
-              
-              // Clean up
-              localStorage.removeItem('spotify_code_verifier');
-              localStorage.removeItem('spotify_redirect_uri');
-              localStorage.removeItem('spotify_state');
-              window.history.replaceState({}, document.title, '/');
-            } else {
-              console.error('❌ Login failed:', data.error || 'Unknown error');
-              setError(data.error || 'Authentication failed');
-              setSnackbarVisible(true);
-            }
-          } catch (err: any) {
-            console.error('❌ Login error:', err);
-            setError(err.message || 'Authentication failed');
-            setSnackbarVisible(true);
-          } finally {
-            setLoading(false);
-          }
-        }
-      };
-      
-      handleWebCallback();
-    }
-  }, [setAuth]);
+      // Validate state (CSRF protection)
+      if (state !== storedState) {
+        throw new Error('Invalid state parameter. Possible CSRF attack.');
+      }
 
-  // Handle deep linking on mobile (when redirected back from server with tokens)
-  useEffect(() => {
-    if (Platform.OS !== 'web') {
-      const handleDeepLink = async (event: { url: string }) => {
-        const url = event.url;
-        console.log('🔗 Deep link received:', url);
-        // Ignore Expo dev links and unrelated URLs
-        if (url.startsWith('exp://') || url.startsWith('expo://')) {
-          return;
-        }
-        
-        // Server sends tokens directly in URL params
-        if (url.includes('accessToken=')) {
-          setLoading(true);
-          try {
-            const urlObj = new URL(url);
-            const accessToken = urlObj.searchParams.get('accessToken');
-            const refreshToken = urlObj.searchParams.get('refreshToken');
-            const userId = urlObj.searchParams.get('userId');
-            const displayName = urlObj.searchParams.get('displayName');
-            const email = urlObj.searchParams.get('email');
-            const profileImage = urlObj.searchParams.get('profileImage');
-            const username = urlObj.searchParams.get('username');
-            const error = urlObj.searchParams.get('error');
-            
-            if (error) {
-              console.error('❌ Auth error from server:', error);
-              setLoading(false);
-              return;
-            }
-            
-            if (accessToken && refreshToken) {
-              console.log('✅ Received tokens from server');
-              
-              // Save auth data
-              await setAuth({
-                accessToken,
-                refreshToken,
-                user: {
-                  id: userId || '',
-                  displayName: displayName || '',
-                  email: email || '',
-                  profileImage: profileImage || '',
-                  username: username || '',
-                },
-              });
-              
-              console.log('✅ Auth stored, user logged in');
-            } else {
-              console.error('❌ Missing tokens in deep link');
-              setLoading(false);
-            }
-          } catch (error) {
-            console.error('❌ Deep link login error:', error);
-            setLoading(false);
-          }
-        }
-      };
+      console.log('🔑 Exchanging authorization code for tokens...');
 
-      // Listen for deep links
-      const subscription = Linking.addEventListener('url', handleDeepLink);
-      
-      // Check if app was opened via deep link
-      Linking.getInitialURL().then((url) => {
-        if (url) {
-          handleDeepLink({ url });
-        }
+      // Exchange code for tokens via backend
+      const response = await fetch(`${config.API_URL}/auth/callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+          codeVerifier: storedVerifier,
+          redirectUri: storedRedirectUri || getRedirectUri(),
+        }),
       });
 
-      return () => {
-        subscription.remove();
-      };
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Authentication failed');
+      }
+
+      console.log('✅ Token exchange successful');
+
+      // Save auth data to context
+      await setAuth({
+        accessToken: data.data.accessToken,
+        refreshToken: data.data.refreshToken,
+        user: data.data.user,
+      });
+
+      console.log('✅ User logged in:', data.data.user.displayName);
+
+      // Clean up storage
+      localStorage.removeItem(SPOTIFY_CONFIG.STORAGE_KEYS.CODE_VERIFIER);
+      localStorage.removeItem(SPOTIFY_CONFIG.STORAGE_KEYS.STATE);
+      localStorage.removeItem(SPOTIFY_CONFIG.STORAGE_KEYS.REDIRECT_URI);
+    } catch (err: any) {
+      console.error('❌ Token exchange failed:', err);
+      setError(err.message || 'Authentication failed');
+      setSnackbarVisible(true);
+    } finally {
+      setLoading(false);
     }
   }, [setAuth]);
 
+  /**
+   * Handle OAuth callback - run once on mount
+   */
+  useEffect(() => {
+    handleWebCallback();
+  }, [handleWebCallback]);
+
+  /**
+   * Clear error state on unmount (cleanup)
+   */
+  useEffect(() => {
+    return () => {
+      setError('');
+      setSnackbarVisible(false);
+    };
+  }, []);
+
+  /**
+   * Handle login button click
+   * 
+   * Platform-specific flows:
+   * - Web: Manual PKCE + full-page redirect
+   * - Mobile: expo-auth-session (handles PKCE internally)
+   */
   const handleLogin = async () => {
     setLoading(true);
     setError('');
-    
+    setSnackbarVisible(false); // Hide any previous error snackbar
+    setLoginSuccessful(false); // Reset success flag
+
     try {
       const redirectUri = getRedirectUri();
-      console.log('🔗 Using redirect URI:', redirectUri);
-      
+      console.log('🔐 Starting OAuth flow...');
+      console.log('📍 Redirect URI:', redirectUri);
+
       if (Platform.OS === 'web') {
-        // Web: Generate PKCE parameters and store them
+        // ============================================================
+        // WEB FLOW: Manual PKCE Implementation
+        // ============================================================
+
+        // Step 1: Generate PKCE parameters
         const codeVerifier = await generateCodeVerifier();
         const codeChallenge = await generateCodeChallenge(codeVerifier);
-        const state = Math.random().toString(36).substring(7);
-        
-        // Store PKCE parameters in localStorage (per Spotify docs)
-        localStorage.setItem('spotify_code_verifier', codeVerifier);
-        localStorage.setItem('spotify_redirect_uri', redirectUri);
-        localStorage.setItem('spotify_state', state);
-        
-        // Build Spotify authorization URL
+        const state = generateState();
+
+        // Step 2: Store parameters securely (needed for callback)
+        localStorage.setItem(SPOTIFY_CONFIG.STORAGE_KEYS.CODE_VERIFIER, codeVerifier);
+        localStorage.setItem(SPOTIFY_CONFIG.STORAGE_KEYS.STATE, state);
+        localStorage.setItem(SPOTIFY_CONFIG.STORAGE_KEYS.REDIRECT_URI, redirectUri);
+
+        console.log('🔑 Generated PKCE parameters');
+        console.log('   Verifier length:', codeVerifier.length);
+        console.log('   Challenge length:', codeChallenge.length);
+        console.log('   State:', state);
+
+        // Step 3: Build authorization URL
         const params = new URLSearchParams({
           client_id: config.SPOTIFY_CLIENT_ID,
           response_type: 'code',
@@ -273,97 +214,123 @@ export default function LoginScreen() {
           code_challenge_method: 'S256',
           code_challenge: codeChallenge,
           state,
-          scope: [
-            'user-read-private',
-            'user-read-email',
-            'user-read-recently-played',
-            'user-top-read',
-            'user-read-currently-playing',
-            'user-read-playback-state',
-          ].join(' '),
+          scope: SPOTIFY_CONFIG.SCOPES.join(' '),
         });
-        
-        const authUrl = `https://accounts.spotify.com/authorize?${params.toString()}`;
-        console.log('🔑 Redirecting to Spotify...');
-        
-        // Redirect to Spotify (full page redirect)
+
+        const authUrl = `${SPOTIFY_CONFIG.AUTH_URL}?${params.toString()}`;
+
+        console.log('🚀 Redirecting to Spotify...');
+
+        // Step 4: Redirect to Spotify (full page redirect)
         window.location.href = authUrl;
+
+        // Note: Execution stops here. When Spotify redirects back,
+        // the page reloads and handleWebCallback() runs.
       } else {
-        // Mobile: Use expo-auth-session with PKCE
+        // ============================================================
+        // MOBILE FLOW: expo-auth-session with PKCE
+        // ============================================================
+
+        console.log('📱 Using expo-auth-session for mobile');
+
+        // Discovery endpoints
         const discovery = {
-          authorizationEndpoint: 'https://accounts.spotify.com/authorize',
-          tokenEndpoint: 'https://accounts.spotify.com/api/token',
+          authorizationEndpoint: SPOTIFY_CONFIG.AUTH_URL,
         };
-        
-        const codeVerifier = await generateCodeVerifier();
-        const codeChallenge = await generateCodeChallenge(codeVerifier);
-        
+
+        // Create auth request (expo-auth-session generates PKCE internally)
         const authRequest = new AuthSession.AuthRequest({
           clientId: config.SPOTIFY_CLIENT_ID,
           redirectUri,
-          scopes: [
-            'user-read-private',
-            'user-read-email',
-            'user-read-recently-played',
-            'user-top-read',
-            'user-read-currently-playing',
-            'user-read-playback-state',
-          ],
-          usePKCE: true,
-          codeChallenge,
+          scopes: SPOTIFY_CONFIG.SCOPES,
+          usePKCE: true, // This makes expo-auth-session generate PKCE params
           codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
         });
-        
-        console.log('🔑 Opening Spotify auth...');
+
+        console.log('🔑 Opening Spotify authorization...');
+
+        // Prompt user to authorize (opens browser)
         const result = await authRequest.promptAsync(discovery);
-        
-        if (result.type === 'success' && result.params.code) {
+
+        console.log('📱 Auth session result:', result.type);
+
+        if (result.type === 'success') {
+          const { code } = result.params;
+
+          if (!code) {
+            throw new Error('No authorization code received');
+          }
+
           console.log('✅ Got authorization code');
-          
-          // Exchange code for tokens via server
+          console.log('🔑 Exchanging code for tokens...');
+
+          // Exchange code for tokens via backend
+          // CRITICAL: We send the code_verifier that expo-auth-session generated
+          const codeVerifier = authRequest.codeVerifier;
+
+          if (!codeVerifier) {
+            throw new Error('Code verifier not available from auth session');
+          }
+
           const response = await fetch(`${config.API_URL}/auth/callback`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
-              code: result.params.code,
-              redirectUri,
+              code,
               codeVerifier,
-              target: 'mobile',
+              redirectUri,
             }),
           });
-          
+
           const data = await response.json();
-          
-          if (data.success && data.data) {
-            console.log('✅ Server auth successful');
-            
-            // Save auth data
-            await setAuth({
-              accessToken: data.data.accessToken,
-              refreshToken: data.data.refreshToken,
-              user: data.data.user,
-            });
-            
-            console.log('✅ Auth stored, user logged in');
-          } else {
-            console.error('❌ Login failed:', data.error || 'Unknown error');
-            setError(data.error || 'Authentication failed');
-            setSnackbarVisible(true);
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || data.message || 'Authentication failed');
           }
+
+          console.log('✅ Token exchange successful');
+
+          // Mark login as successful IMMEDIATELY to prevent any error display
+          setLoginSuccessful(true);
+          
+          // Clear any existing errors
+          setError('');
+          setSnackbarVisible(false);
+
+          // Save auth data to context
+          await setAuth({
+            accessToken: data.data.accessToken,
+            refreshToken: data.data.refreshToken,
+            user: data.data.user,
+          });
+
+          console.log('✅ User logged in:', data.data.user.displayName);
+          
+          // Exit early on success
+          return;
         } else if (result.type === 'error') {
-          console.error('❌ Auth error:', result.error);
-          setError(result.error?.message || 'Authentication failed');
-          setSnackbarVisible(true);
+          throw new Error(result.error?.message || 'Authorization failed');
+        } else if (result.type === 'cancel' || result.type === 'dismiss') {
+          console.log('🔙 User cancelled or dismissed authorization');
+          // Not an error - user cancelled/dismissed intentionally
+          setLoading(false);
+          return;
         } else {
-          console.log('🔙 Auth cancelled');
+          console.warn('⚠️ Unknown auth result type:', result.type);
+          throw new Error(`Unknown authorization result type: ${result.type}`);
         }
-        
+
         setLoading(false);
       }
     } catch (err: any) {
       console.error('❌ Login error:', err);
-      setError(err.message || 'Authentication failed');
-      setSnackbarVisible(true);
+      // Only show error if login wasn't successful
+      if (!loginSuccessful) {
+        setError(err.message || 'Authentication failed');
+        setSnackbarVisible(true);
+      }
       setLoading(false);
     }
   };
@@ -371,7 +338,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content}>
-        {/* App Logo/Icon */}
+        {/* App Logo */}
         <View style={styles.logoContainer}>
           <Image
             source={require('../../assets/icon.png')}
@@ -388,7 +355,7 @@ export default function LoginScreen() {
           Track, Rate & Discover Music
         </Text>
 
-        {/* Features List */}
+        {/* Features */}
         <View style={styles.features}>
           <FeatureItem icon="🎵" text="Track your listening history" theme={theme} />
           <FeatureItem icon="⭐" text="Rate and review albums" theme={theme} />
@@ -414,7 +381,7 @@ export default function LoginScreen() {
           Powered by Spotify • Free to use
         </Text>
       </View>
-      
+
       {/* Error Snackbar */}
       <Snackbar
         visible={snackbarVisible}
@@ -431,13 +398,8 @@ export default function LoginScreen() {
   );
 }
 
-type FeatureItemProps = {
-  icon: string;
-  text: string;
-  theme: any;
-};
-
-function FeatureItem({ icon, text, theme }: FeatureItemProps) {
+/** Feature item component */
+function FeatureItem({ icon, text, theme }: { icon: string; text: string; theme: any }) {
   return (
     <View style={styles.featureItem}>
       <Text style={styles.featureIcon}>{icon}</Text>

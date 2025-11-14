@@ -1,320 +1,408 @@
-# 🎵 Spotify Music Tracker
-
-[![Backend Status](https://img.shields.io/uptimerobot/status/m801757949-28611e67f3ccec3b8579fcdb?label=Backend%20(Render)&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
-[![Backend Uptime](https://img.shields.io/uptimerobot/ratio/7/m801757949-28611e67f3ccec3b8579fcdb?label=API%20Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
-
-[![Frontend Status](https://img.shields.io/uptimerobot/status/m801757971-4ce2c38569b98bd14f832e86?label=Frontend%20(Vercel)&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
-[![Frontend Uptime](https://img.shields.io/uptimerobot/ratio/7/m801757971-4ce2c38569b98bd14f832e86?label=Web%20Uptime&style=for-the-badge)](https://stats.uptimerobot.com/OyUXm4nc9m)
+# 🎵 RateSangeet - Spotify Music Tracker
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
 [![Code of Conduct](https://img.shields.io/badge/Code%20of-Conduct-blue.svg?style=for-the-badge)](CODE_OF_CONDUCT.md)
 
-A mobile music tracking application similar to Letterboxd but for Spotify. Track, rate, and review songs, albums, and singles you've listened to. Built with React Native (Expo) and Node.js.
+> 🎯 **FLUTTER + MATERIAL DESIGN 3** - Track, rate, and review every song you listen to on Spotify. Built with **Flutter**, **Material Design 3**, and **Riverpod** state management.
+
+A mobile music tracking application like Letterboxd but for Spotify. Track, rate, and review songs, albums, and singles. Built with **Flutter** + **Material Design 3** and powered by a headless **Node.js/Express** backend.
 
 > **🌟 This is an open-source project!** We welcome contributions from the community. Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
 
-> **Live Status**: [View Uptime Dashboard →](https://stats.uptimerobot.com/OyUXm4nc9m) | Backend: Render | Frontend: Vercel
-
-> Data storage overview: We use a hybrid model (cloud + local). See docs/HYBRID_STORAGE.md for the full specification.
+> **📚 Hybrid Storage**: Cloud (MongoDB, 90-day retention) + Local (SQLite device archive). See [docs/02-architecture/HYBRID_STORAGE.md](docs/02-architecture/HYBRID_STORAGE.md)
 
 ## ✨ Features
 
-- 🔐 **Spotify OAuth Authentication** - Secure login with your Spotify account
-- 🎧 **Track Your Music** - View your recently played and top tracks from Spotify
-- ⭐ **Rate & Review** - Rate songs and albums on a 1-10 scale
+- 🔐 **Spotify OAuth Authentication** - Secure login with your Spotify account (RFC 7636 PKCE)
+- 🎧 **Smart Scrobble Detection** - Client-side detection (40% played or ≥30s) with batch sync
+- ⭐ **Rate & Review** - Rate songs/albums on 1-5 or 1-10 scale with Material Design 3 UI
 - 📝 **Write Reviews** - Add personal notes and thoughts about tracks
-- 📊 **User Dashboard** - View your statistics and listening history
+- 📊 **Smart Statistics** - View listening stats with incremental loading
 - 🔍 **Search** - Find and add any song or album from Spotify's catalog
-- 📱 **Native Mobile App** - Build APK for Android (iOS support included)
+- 💾 **Hybrid Storage** - Cloud (90-day) + Device Archive (SQLite local storage)
+- 📱 **Native Mobile App** - Android (APK) & iOS (via Xcode build)
+- 🎨 **Material Design 3** - Google's latest design system with default static theme
+- ⚡ **Smart Polling** - 90% reduction in API calls (dynamic intervals based on playback state)
+- 🔄 **Album Completion** - Track album progress (4+ tracks, 70% unique = completion)
 
 ## 📚 Documentation
 
-**[→ Browse Complete Documentation](docs/INDEX.md)**
+**[→ Complete Flutter Documentation](docs/README_FLUTTER.md)** | [Architecture](docs/FLUTTER_ARCHITECTURE.md) | [Setup Guide](docs/FLUTTER_SETUP.md)
 
-Our documentation is organized into 7 sections for easy navigation:
+**Documentation Index:**
 
-1. **[Getting Started](docs/01-getting-started/)** - Quickstart, setup checklist, commands
-2. **[Architecture](docs/02-architecture/)** - System design, hybrid storage, scrobble algorithm
-3. **[Features](docs/03-features/)** - Threaded reviews, caching, uptime monitoring
-4. **[Design](docs/04-design/)** - Theme system, color palette
-5. **[Authentication](docs/05-authentication/)** - Spotify OAuth setup and PKCE flow
-6. **[Deployment](docs/06-deployment/)** - Render deployment guide
-7. **[Improvements](docs/07-improvements/)** - Past enhancements and fixes
+1. **[Flutter Guide](docs/README_FLUTTER.md)** - Features, tech stack, screens overview, Material Design 3
+2. **[Flutter Architecture](docs/FLUTTER_ARCHITECTURE.md)** - Project structure, Riverpod patterns, storage, auth flow
+3. **[Flutter Setup](docs/FLUTTER_SETUP.md)** - Step-by-step project creation and configuration
+4. **[Design System](docs/04-design/)** - Material Design 3 with default static theme
+5. **[Hybrid Storage](docs/02-architecture/HYBRID_STORAGE.md)** - Cloud + Local archive strategy
+6. **[Smart Scrobbling](docs/02-architecture/SMART_SCROBBLE_ALGORITHM.md)** - Client-side detection logic
+7. **[Backend API](docs/02-architecture/PROJECT_SUMMARY.md)** - REST endpoints documentation
 
 ## 🏗️ Project Structure
 
 ```
-spotify-tracker/
-├── mobile/              # React Native mobile app (Expo)
+ratesangeet/
+├── flutter_app/         # Flutter mobile app (MAIN - to be created)
+│   ├── lib/
+│   │   ├── config/          # API & theme configuration
+│   │   ├── models/          # Data classes (Track, Album, Review)
+│   │   ├── providers/       # Riverpod state management
+│   │   ├── screens/         # UI screens (Login, Home, Album, Profile)
+│   │   ├── widgets/         # Reusable components (WavyProgressIndicator, Card)
+│   │   ├── services/        # API client, auth service, storage
+│   │   └── main.dart        # Entry point
+│   ├── android/         # Deep linking & gradle config
+│   ├── ios/             # Deep linking & Xcode config
+│   └── pubspec.yaml     # Dependencies (Riverpod, Dio, Hive, sqflite)
+│
+├── server/              # Node.js/Express backend (HEADLESS API)
 │   ├── src/
-│   │   ├── screens/     # App screens (Login, Home, Search, AddReview)
-│   │   ├── navigation/  # React Navigation setup
-│   │   ├── context/     # Auth context
-│   │   ├── services/    # API service layer
-│   │   ├── storage/     # Local SQLite for scrobbles
-│   │   ├── utils/       # Helper functions
-│   │   └── config/      # App configuration
-│   └── App.tsx          # Entry point
-├── server/              # Node.js/Express backend API
-│   └── src/
-│       ├── models/      # MongoDB models (User, Review, AlbumStats, TrackStats)
-│       ├── routes/      # API routes (auth, music, reviews, stats)
-│       ├── jobs/        # Background jobs (archive scrobbles)
-│       └── index.ts     # Server entry point
-├── docs/                # Organized documentation (7 sections)
-│   ├── INDEX.md         # Documentation homepage
-│   ├── 01-getting-started/
-│   ├── 02-architecture/
-│   ├── 03-features/
-│   ├── 04-design/
-│   ├── 05-authentication/
-│   ├── 06-deployment/
-│   └── 07-improvements/
-└── package.json         # Root package with helper scripts
+│   │   ├── models/      # MongoDB schemas
+│   │   ├── routes/      # REST API endpoints (/api/v2/*)
+│   │   ├── middleware/  # JWT auth, rate limit, gzip
+│   │   ├── jobs/        # Background tasks (archive, cleanup)
+│   │   └── index.ts     # Server entry (port 5000)
+│   ├── package.json
+│   └── .env.example
+│
+├── docs/                # Project documentation
+│   ├── README_FLUTTER.md         # Flutter overview & features
+│   ├── FLUTTER_ARCHITECTURE.md   # Technical architecture
+│   ├── FLUTTER_SETUP.md          # Step-by-step setup
+│   ├── FLUTTER_MD3_GUIDE.md      # Material Design 3 guide
+│   ├── 02-architecture/          # System design docs
+│   ├── 04-design/                # Design system & theme
+│   ├── 05-authentication/        # OAuth & PKCE flow
+│   └── 07-improvements/          # Past enhancements
+│
+├── mobile/              # [ARCHIVED] Old React Native (Expo)
+├── web/                 # [ARCHIVED] Old MUI web app
+└── README.md            # This file
 ```
 
-## 🚀 Getting Started
+## 🚀 Getting Started (Flutter)
 
 ### Prerequisites
 
-- **Node.js** (v16 or higher)
-- **npm** or **yarn**
-- **MongoDB** (local or MongoDB Atlas)
-- **Spotify Developer Account** - [Create one here](https://developer.spotify.com/dashboard)
-- **Expo Go** app (for testing on physical device)
+- **Flutter SDK** (3.x or higher) - [Install here](https://flutter.dev/docs/get-started/install)
+- **Dart SDK** (included with Flutter)
+- **Android Studio** + Android SDK (for Android)
+- **Xcode** (for iOS on Mac)
+- **Node.js** (v16+) - for backend server
+- **MongoDB Atlas** account (cloud) or local MongoDB
+- **Spotify Developer Account** - [Create here](https://developer.spotify.com/dashboard)
 
-### 1. Clone the Repository
+### 1. Clone Repository & Set Up Backend
 
 ```bash
-git clone <your-repo-url>
-cd spotiireate
+# Clone project
+git clone <repo-url>
+cd ratesangeet
+
+# Install backend dependencies
+cd server
+npm install
+
+# Create .env file with your credentials
+cp .env.example .env
+# Edit .env with Spotify OAuth credentials and MongoDB URI
 ```
 
-### 2. Set Up Spotify API
+### 2. Create Flutter Project
 
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Create a new app
-3. Note your **Client ID** and **Client Secret**
-4. Add redirect URI: `http://127.0.0.1:5000/api/auth/callback` (⚠️ Must use `127.0.0.1`, NOT `localhost`)
+```bash
+# Create Flutter app (or open existing Flutter folder)
+flutter create flutter_app
+cd flutter_app
+
+# Or use provided structure from docs/FLUTTER_SETUP.md
+```
+
+### 3. Configure Flutter App
+
+```bash
+# Add dependencies
+flutter pub get
+
+# Generate code (JSON serialization, Riverpod)
+flutter pub run build_runner build --delete-conflicting-outputs
+```
+
+Edit `lib/config/api_config.dart`:
+```dart
+class ApiConfig {
+  static const String baseUrl = 'http://YOUR_LOCAL_IP:5000/api/v2';
+  static const String spotifyClientId = 'YOUR_SPOTIFY_CLIENT_ID';
+  static const String redirectUri = 'ratesangeet://callback';
+}
+```
+
+### 4. Configure Deep Linking
+
+**Android** (`android/app/src/main/AndroidManifest.xml`):
+```xml
+<intent-filter>
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="ratesangeet" android:host="callback" />
+</intent-filter>
+```
+
+**iOS** (`ios/Runner/Info.plist`):
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>ratesangeet</string>
+    </array>
+  </dict>
+</array>
+```
+
+### 5. Start Backend Server
+
+```bash
+cd server
+npm run dev  # Runs on http://localhost:5000
+```
+
+### 6. Run Flutter App
+
+```bash
+# Terminal 2 - in flutter_app folder
+flutter run
+
+# Or specify device
+flutter run -d android       # Android emulator
+flutter run -d ios           # iOS simulator
+flutter run -d chrome        # Web browser
+```
+
+### 7. Log In with Spotify
+
+1. Open app → tap "Login with Spotify"
+2. Authenticate with your Spotify account
+3. Grant permissions (scrobble detection, offline)
+4. Redirect back to app
+
+✅ **Done!** You're now tracking music.
 
 ### 3. Configure Environment Variables
 
-Create `.env` file in the `server` directory:
-
-```bash
-cd server
-cp .env.example .env
-```
-
-Edit `server/.env` with your credentials:
-
+**Backend** (`server/.env`):
 ```env
 PORT=5000
-MONGODB_URI=mongodb://127.0.0.1:27017/spotify-tracker
-SESSION_SECRET=your-super-secret-session-key-change-this
+NODE_ENV=development
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ratesangeet
 
-# Spotify API Credentials
-SPOTIFY_CLIENT_ID=your_spotify_client_id_here
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:5000/api/auth/callback
 
-# For mobile development
-CLIENT_URL=http://127.0.0.1:8081
+# Rate limiting & caching
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Archive settings
+SCROBBLES_TTL_DAYS=90
+ARCHIVE_KEEP_RECENT=200
 ```
 
-### 4. Configure Mobile App
+**See [docs/FLUTTER_SETUP.md](docs/FLUTTER_SETUP.md) for complete setup instructions.**
 
-Edit `mobile/src/config/index.ts`:
+## 📱 Building & Deployment
 
-```typescript
-const API_URL = 'http://YOUR_LOCAL_IP:5000/api'; // Use your computer's IP, not localhost
-export default {
-  API_URL,
-  SPOTIFY_CLIENT_ID: 'your_spotify_client_id_here',
-  SPOTIFY_REDIRECT_URI: 'exp://localhost:8081',
-};
-```
-
-**Important:** Replace `YOUR_LOCAL_IP` with your computer's local IP address (e.g., `192.168.1.100`). You can find this by running:
-- Windows: `ipconfig` (look for IPv4 Address)
-- Mac/Linux: `ifconfig` or `ip addr`
-
-### 5. Start MongoDB
-
-Make sure MongoDB is running:
+### Build for Android
 
 ```bash
-# If using local MongoDB
-mongod
+# Debug APK (for testing)
+flutter build apk --debug
 
-# Or use MongoDB Atlas (cloud) by updating MONGODB_URI in .env
-```
+# Release APK (optimized)
+flutter build apk --release
 
-### 6. Install Dependencies
-
-```bash
-# Install all dependencies (root, mobile, and server)
-npm run install:all
-```
-
-### 7. Run the Application
-
-#### Option 1: Run Both (Recommended)
-
-```bash
-# From root directory - runs both server and mobile app
-npm run dev
-```
-
-#### Option 2: Run Separately
-
-**Terminal 1 - Backend Server:**
-```bash
-cd server
-npm run dev
-```
-
-**Archive old scrobbles (server-side maintenance)**
-
-To run the archival job that aggregates old scrobbles into album summaries and reduces raw scrobble storage:
-
-```bash
-# from the server folder
-npm run archive
-# Dry run (no deletes)
-ARCHIVE_DRY_RUN=1 npm run archive
-```
-
-**Terminal 2 - Mobile App:**
-```bash
-cd mobile
-npm start
-```
-
-### 8. Test on Device/Emulator
-
-1. Install **Expo Go** on your physical device (from App Store or Google Play)
-2. Scan the QR code shown in the terminal
-3. Or press `a` to run on Android emulator or `i` for iOS simulator
-
-## 📱 Building APK for Android
-
-### Method 1: Using EAS Build (Recommended)
-
-1. Install EAS CLI globally:
-```bash
-npm install -g eas-cli
-```
-
-2. Login to your Expo account:
-```bash
-eas login
-```
-
-3. Configure your project:
-```bash
-cd mobile
-eas build:configure
-```
-
-4. Build APK:
-```bash
-# Build APK for testing (doesn't require Google Play)
-eas build --platform android --profile preview
-
-# Or build AAB for Google Play Store
+# Or use EAS Build (Expo services)
 eas build --platform android --profile production
 ```
 
-5. Download the APK from the link provided after the build completes
+### Build for iOS (Mac Only)
 
-### Method 2: Local Build
-
-1. Install Android Studio and set up Android SDK
-2. Run:
 ```bash
-cd mobile
-expo run:android --variant release
+# Debug
+flutter run -d ios
+
+# Release for App Store
+flutter build ipa --release
+```
+
+### Deploy Backend to Render
+
+```bash
+# Push to GitHub
+git add .
+git commit -m "Flutter migration + Material Design 3"
+git push origin main
+
+# Render auto-deploys from main branch
+# Check: https://ratesangeet.onrender.com/api/v2/stats/summary
 ```
 
 ## 🛠️ Tech Stack
 
-### Mobile App
-- **React Native** with **Expo**
-- **TypeScript**
-- **React Navigation** (Stack & Bottom Tabs)
-- **Expo Auth Session** (Spotify OAuth)
-- **AsyncStorage** (Local data persistence)
-- **Axios** (API requests)
+### Flutter Frontend
+- **Flutter 3.x** - UI framework with Material Design 3 built-in
+- **Dart** - Programming language
+- **Riverpod 2.x** - Reactive state management (no Provider package)
+- **Dio** - HTTP client for REST API calls
+- **Hive** - Local key-value storage (auth tokens, preferences)
+- **SQLite** (sqflite) - Device archive for full scrobble history
+- **uni_links** - Deep linking for OAuth redirect
+- **Material Design 3** - Google's latest design system with default static theme
 
-### Backend
-- **Node.js** with **Express**
-- **TypeScript**
-- **MongoDB** with **Mongoose**
-- **Spotify Web API**
-- **CORS & Session Management**
+### Backend API (Headless)
+- **Node.js** with **Express** - REST API server
+- **TypeScript** - Type safety
+- **MongoDB Atlas** - Cloud database (90-day scrobble retention)
+- **Mongoose** - Database ORM
+- **Spotify Web API** - Music data & OAuth
+- **JWT** - Secure authentication
+- **Render** - Cloud deployment
 
-## 📚 API Endpoints
+## 📚 API Endpoints (v2 - Minimal Payloads)
 
 ### Authentication
-- `GET /api/auth/login` - Get Spotify authorization URL
-- `POST /api/auth/callback` - Handle Spotify callback with auth code
-- `POST /api/auth/refresh` - Refresh access token
+- `GET /api/v2/auth/login` - Get Spotify authorization URL
+- `POST /api/v2/auth/callback` - Handle OAuth callback
+- `POST /api/v2/auth/refresh` - Refresh JWT token
 
-### Music
-- `GET /api/music/recent` - Get recently played tracks
-- `GET /api/music/top-tracks` - Get user's top tracks
-- `GET /api/music/search` - Search for tracks/albums
+### Scrobbles & Stats
+- `POST /api/v2/scrobbles/batch-upsert` - Batch sync scrobbles (max 100)
+- `GET /api/v2/scrobbles/recent` - Get recent scrobbles with pagination
+- `GET /api/v2/scrobbles/archive-ready` - Get scrobbles ready for device archive
+- `POST /api/v2/scrobbles/ack-archive` - Acknowledge archived scrobbles
+- `GET /api/v2/stats/summary` - User statistics summary
+- `GET /api/v2/stats/top-albums` - Top albums by play count
+- `GET /api/v2/stats/top-tracks` - Top tracks by play count
 
-### Reviews
-- `POST /api/reviews` - Create new review
-- `GET /api/reviews/user/:userId` - Get all reviews for a user
-- `GET /api/reviews/:id` - Get specific review
-- `PUT /api/reviews/:id` - Update review
-- `DELETE /api/reviews/:id` - Delete review
-- `GET /api/reviews/stats/:userId` - Get user statistics
+### Music Data
+- `GET /api/v2/track/:id` - Get track details
+- `GET /api/v2/album/:id` - Get album details
+- `GET /api/v2/artist/:id` - Get artist details
+- `GET /api/v2/credits/:trackId` - Get track credits
 
-## 🎨 App Screens
+### Reviews & Ratings
+- `POST /api/v2/reviews` - Create review
+- `GET /api/v2/reviews/:id` - Get review
+- `PUT /api/v2/reviews/:id` - Update review
+- `DELETE /api/v2/reviews/:id` - Delete review
 
-1. **Login Screen** - Spotify OAuth authentication
-2. **Home Screen** - Dashboard with user stats and review list
-3. **Search Screen** - Search and discover music
-4. **Add Review Screen** - Rate and review tracks with 1-10 stars
+**All endpoints return minimal JSON (typically <30KB) with automatic gzip compression & ETag caching.**
+
+See [Backend API Spec](docs/02-architecture/PROJECT_SUMMARY.md) for full documentation.
+
+## 🎨 Material Design 3 Screens
+
+1. **Login Screen** - Spotify OAuth with deep linking redirect
+2. **Home Screen** - Now playing card with wavy progress indicator, stats summary, recent scrobbles
+3. **Album Detail** - Album art, tracks, completion progress (4+ tracks, 70% = complete)
+4. **Search Screen** - Search Spotify catalog, add to track list
+5. **Profile Screen** - User stats, top albums/tracks, account settings
+6. **Review Screen** - Rate (1-5 stars) and review tracks/albums
+7. **History Screen** - Full listening history with pagination
+
+**All screens use Material Design 3 components with default static theme.**
 
 ## 🐛 Troubleshooting
 
 ### "Cannot connect to server"
-- Make sure backend server is running on port 5000
-- Use your computer's local IP instead of `localhost` in mobile config
+- Verify backend is running: `curl http://localhost:5000/api/v2/stats/summary`
+- Use your machine's local IP in Flutter config (not localhost)
 - Check firewall settings
 
-### "Spotify authentication fails"
-- Verify Spotify Client ID and Secret are correct
-- Ensure redirect URI matches in Spotify Dashboard and `.env` file
-- Check that user has given required permissions
+### "Spotify redirect URI mismatch"
+- Ensure Spotify Dashboard has exact redirect URI: `ratesangeet://callback`
+- Verify deep linking is configured in AndroidManifest.xml and Info.plist
+- Check that app scheme matches config
 
 ### "MongoDB connection error"
-- Ensure MongoDB is running
-- Verify `MONGODB_URI` in `.env` is correct (use `127.0.0.1` not `localhost`)
-- Check MongoDB service status
+- Verify MongoDB Atlas credentials in `server/.env`
+- Check network access is allowed from your IP
+- Test connection: `mongosh "mongodb+srv://user:pass@..."`
 
-### "Spotify redirect URI mismatch"
-- In Spotify Dashboard, use **exactly**: `http://127.0.0.1:5000/api/auth/callback`
-- Do NOT use `localhost` - Spotify requires `127.0.0.1` for loopback addresses
-- Ensure no trailing slashes
+### "Flutter build fails"
+- Run `flutter clean` and `flutter pub get`
+- Check Android SDK is installed: `flutter doctor`
+- For iOS: `cd ios && pod install && cd ..`
 
-## 🔒 Environment Variables Reference
+### "Deep linking not working"
+- Android: Rebuild app (not just hot reload): `flutter run --no-fast-start`
+- iOS: Rebuild app on device
+- Test with: `adb shell am start -W -a android.intent.action.VIEW -d "ratesangeet://callback"`
+
+See [FLUTTER_SETUP.md](docs/FLUTTER_SETUP.md) for more solutions.
+
+## 📊 Architecture Overview
+
+### Hybrid Storage Model
+```
+Spotify API ← Flutter App → Backend API
+              ↓              ↓
+           SQLite       MongoDB Atlas
+         (Local, all)  (Cloud, 90 days)
+           ↓                ↓
+        Device         Recent Data
+      (Permanent)     (Rotating)
+```
+
+### Client-Side Scrobble Detection
+```
+Spotify Playback
+  ↓
+Check: (progressMs / durationMs >= 0.4) OR (progressMs >= 30s)?
+  ↓ YES
+Queue locally (batch every 30s)
+  ↓
+POST /api/v2/scrobbles/batch-upsert
+  ↓
+Server: Dedup + Album Logic + Stats Update
+  ↓
+SQLite Archive (local) + MongoDB (cloud)
+```
+
+### API Optimization
+- **Payload sizes**: <30KB typical, <100KB max
+- **Smart polling**: Dynamic intervals based on playback state
+- **Caching**: ETag-based caching with gzip compression
+- **Rate limiting**: 10/s burst, 100/min per user
+
+See [FLUTTER_ARCHITECTURE.md](docs/FLUTTER_ARCHITECTURE.md) for full technical details.
+
+### Backend (`server/.env`)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `PORT` | Server port | `5000` |
-| `MONGODB_URI` | MongoDB connection string | `mongodb://127.0.0.1:27017/spotify-tracker` |
-| `SESSION_SECRET` | Secret for session encryption | `random-secret-key` |
-| `SPOTIFY_CLIENT_ID` | Spotify API Client ID | From Spotify Dashboard |
-| `SPOTIFY_CLIENT_SECRET` | Spotify API Client Secret | From Spotify Dashboard |
+| `NODE_ENV` | Environment | `development` or `production` |
+| `MONGODB_URI` | MongoDB connection | `mongodb+srv://user:pass@cluster...` |
+| `SPOTIFY_CLIENT_ID` | Spotify OAuth ID | From Spotify Dashboard |
+| `SPOTIFY_CLIENT_SECRET` | Spotify OAuth Secret | From Spotify Dashboard |
 | `SPOTIFY_REDIRECT_URI` | OAuth callback URL | `http://127.0.0.1:5000/api/auth/callback` |
-| `CLIENT_URL` | Mobile app URL | `http://127.0.0.1:8081` |
+| `JWT_SECRET` | JWT signing key | Random secret string |
+| `SCROBBLES_TTL_DAYS` | Cloud retention days | `90` |
+| `RATE_LIMIT_MAX_REQUESTS` | Requests per window | `100` |
+
+### Flutter (`lib/config/api_config.dart`)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `baseUrl` | Backend API URL | `http://192.168.1.100:5000/api/v2` |
+| `spotifyClientId` | Spotify Client ID | From Spotify Dashboard |
+| `redirectUri` | Deep link scheme | `ratesangeet://callback` |
 
 ## � Uptime Monitoring (Render Free Tier)
 
@@ -328,7 +416,17 @@ To keep the Render free tier server awake and avoid 15-minute idle timeouts:
 
 📖 **Full guide**: See [`docs/UPTIME_INTEGRATION_SUMMARY.md`](docs/UPTIME_INTEGRATION_SUMMARY.md)
 
-## �📝 Future Enhancements
+## 📞 Quick Links
+
+- 📘 [Flutter Complete Guide](docs/README_FLUTTER.md)
+- 🏗️ [Architecture & Internals](docs/FLUTTER_ARCHITECTURE.md)
+- ⚙️ [Step-by-Step Setup](docs/FLUTTER_SETUP.md)
+- 📦 [Material Design 3 Details](docs/04-design/)
+- 💾 [Hybrid Storage Strategy](docs/02-architecture/HYBRID_STORAGE.md)
+- 🔐 [Spotify OAuth Setup](docs/05-authentication/SPOTIFY_SETUP.md)
+- 🚀 [Deployment Guide](docs/06-deployment/RENDER_DEPLOYMENT.md)
+
+## 📝 Future Enhancements
 
 - [ ] Social features (follow users, share reviews)
 - [ ] Playlist integration

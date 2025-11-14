@@ -20,7 +20,8 @@ export default function SettingsScreen({ navigation }: any) {
 
   const handleLogout = () => {
     logout();
-    navigation.navigate('Auth');
+    // Navigation happens automatically via AuthContext state change
+    // App.tsx renders LoginScreen when user is null
   };
 
   return (

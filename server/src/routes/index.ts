@@ -23,6 +23,8 @@ import v2MusicRoutes from './v2/music.js';
 
 const router = Router();
 
+console.log('✅ Routes index.ts loaded - V2 routes imported successfully');
+
 // New grouped mounts (use refactored controller-based routes)
 router.use('/user', userGroup);           // /api/user/* (grouped)
 router.use('/spotify', spotifyGroup);     // /api/spotify/* (grouped)

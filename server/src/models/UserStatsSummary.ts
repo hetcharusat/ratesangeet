@@ -11,6 +11,8 @@ export interface ILastScrobble {
 export interface IUserStatsSummary extends Document {
   userId: Types.ObjectId; // ref to User
   totalScrobbles: number;
+  totalMinutes: number;
+  uniqueArtistsCount: number;
   lastScrobbled?: ILastScrobble;
   createdAt: Date;
   updatedAt: Date;
@@ -28,6 +30,8 @@ const UserStatsSummarySchema = new Schema<IUserStatsSummary>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
     totalScrobbles: { type: Number, required: true, default: 0 },
+    totalMinutes: { type: Number, required: true, default: 0 },
+    uniqueArtistsCount: { type: Number, required: true, default: 0 },
     lastScrobbled: { type: LastScrobbleSchema },
   },
   { timestamps: true }

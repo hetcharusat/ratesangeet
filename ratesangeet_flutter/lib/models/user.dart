@@ -31,4 +31,7 @@ class User {
         'email': email,
         'imageUrl': imageUrl,
       };
+
+  // Alias for compatibility
+  String? get profileImage => imageUrl;
 }

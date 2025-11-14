@@ -27,11 +27,13 @@ router.get('/summary', requireAuth, async (req: Request, res: Response) => {
       });
     }
     
+    // Type-safe access with fallback values
+    const result = summary as any;
     res.json({
-      totalMinutes: summary.totalMinutes || 0,
-      totalScrobbles: summary.totalScrobbles || 0,
-      uniqueArtistsCount: summary.uniqueArtistsCount || 0,
-      lastScrobbled: summary.lastScrobbled || null,
+      totalMinutes: result.totalMinutes ?? 0,
+      totalScrobbles: result.totalScrobbles ?? 0,
+      uniqueArtistsCount: result.uniqueArtistsCount ?? 0,
+      lastScrobbled: result.lastScrobbled ?? null,
     });
   } catch (error) {
     console.error('❌ Error fetching stats summary:', error);

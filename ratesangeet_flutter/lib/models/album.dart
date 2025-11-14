@@ -20,6 +20,9 @@ class Album {
     this.completionProgress,
   });
 
+  // Alias for compatibility with different naming conventions
+  String? get albumArt => imageUrl;
+
   factory Album.fromJson(Map<String, dynamic> json) {
     return Album(
       id: json['albumId'] ?? json['id'] ?? '',

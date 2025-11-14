@@ -50,6 +50,7 @@ class NowPlaying {
   final String trackId;
   final String trackName;
   final String? albumId;
+  final String? albumName;
   final String artistName;
   final int progressMs;
   final int durationMs;
@@ -61,6 +62,7 @@ class NowPlaying {
     required this.trackId,
     required this.trackName,
     this.albumId,
+    this.albumName,
     required this.artistName,
     required this.progressMs,
     required this.durationMs,
@@ -74,6 +76,7 @@ class NowPlaying {
       trackId: json['trackId'] ?? '',
       trackName: json['trackName'] ?? '',
       albumId: json['albumId'],
+      albumName: json['albumName'],
       artistName: json['artistName'] ?? '',
       progressMs: json['progressMs'] ?? 0,
       durationMs: json['durationMs'] ?? 0,
@@ -87,6 +90,7 @@ class NowPlaying {
         'trackId': trackId,
         'trackName': trackName,
         'albumId': albumId,
+        'albumName': albumName,
         'artistName': artistName,
         'progressMs': progressMs,
         'durationMs': durationMs,
@@ -94,6 +98,9 @@ class NowPlaying {
         'deviceName': deviceName,
         'imageUrl': imageUrl,
       };
+
+  // Alias for compatibility
+  String? get albumArt => imageUrl;
 
   double get progress => durationMs > 0 ? progressMs / durationMs : 0.0;
 }

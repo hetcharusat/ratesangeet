@@ -1,8 +1,8 @@
 /// API Configuration for RateSangeet
 /// Contains backend URL, Spotify OAuth credentials, and API endpoints
 class ApiConfig {
-  // Backend API URL (Render deployment)
-  static const String backendUrl = 'https://ratesangeet.onrender.com';
+  // Backend API URL (LOCAL DEV SERVER - change to https://ratesangeet.onrender.com for production)
+  static const String backendUrl = 'http://192.168.56.1:5000';
   static const String apiBaseUrl = '$backendUrl/api/v2';
 
   // Spotify OAuth Configuration
@@ -14,26 +14,26 @@ class ApiConfig {
   // API Endpoints - Auth
   static const String authCallback = '/api/auth/callback';
 
-  // API Endpoints - Scrobbles
-  static const String scrobblesBatchUpsert = '/api/v2/scrobbles/batch-upsert';
-  static const String scrobblesRecent = '/api/v2/scrobbles/recent';
-  static const String scrobblesArchiveReady = '/api/v2/scrobbles/archive-ready';
-  static const String scrobblesAckArchive = '/api/v2/scrobbles/ack-archive';
+  // API Endpoints - Scrobbles (paths relative to apiBaseUrl which already has /api/v2)
+  static const String scrobblesBatchUpsert = '/scrobbles/batch-upsert';
+  static const String scrobblesRecent = '/scrobbles/recent';
+  static const String scrobblesArchiveReady = '/scrobbles/archive-ready';
+  static const String scrobblesAckArchive = '/scrobbles/ack-archive';
 
-  // API Endpoints - Stats
-  static const String statsSummary = '/api/v2/stats/summary';
-  static const String statsTopAlbums = '/api/v2/stats/top-albums';
-  static const String statsTopTracks = '/api/v2/stats/top-tracks';
+  // API Endpoints - Stats (paths relative to apiBaseUrl)
+  static const String statsSummary = '/stats/summary';
+  static const String statsTopAlbums = '/stats/top-albums';
+  static const String statsTopTracks = '/stats/top-tracks';
 
-  // API Endpoints - Music Data
-  static const String track = '/api/v2/track';
-  static const String album = '/api/v2/album';
-  static const String artist = '/api/v2/artist';
-  static const String credits = '/api/v2/credits';
+  // API Endpoints - Music Data (paths relative to apiBaseUrl)
+  static const String track = '/track';
+  static const String album = '/album';
+  static const String artist = '/artist';
+  static const String credits = '/credits';
 
-  // API Endpoints - Spotify Integration
-  static const String nowPlaying = '/api/v2/now-playing';
-  static const String playingProgress = '/api/v2/playing-progress';
+  // API Endpoints - Spotify Integration (paths relative to apiBaseUrl)
+  static const String nowPlaying = '/now-playing';
+  static const String playingProgress = '/playing-progress';
 
   // Request Configuration
   static const int connectTimeout = 30000; // 30 seconds

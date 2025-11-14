@@ -493,27 +493,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           ),
         ),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: gradientColors[0], size: 32),
-            const SizedBox(height: 8),
+            Icon(icon, color: gradientColors[0], size: 28),
+            const SizedBox(height: 6),
             Text(
               value,
-              style: textTheme.headlineSmall?.copyWith(
+              style: textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: colorScheme.onSurface,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               label,
               style: textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurface.withOpacity(0.6),
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

@@ -15,7 +15,6 @@ const AlbumSchema = new Schema<IAlbum>({
   spotifyId: {
     type: String,
     required: true,
-    unique: true,
   },
   name: {
     type: String,

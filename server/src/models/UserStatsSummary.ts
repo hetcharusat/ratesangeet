@@ -28,7 +28,7 @@ const LastScrobbleSchema = new Schema<ILastScrobble>({
 
 const UserStatsSummarySchema = new Schema<IUserStatsSummary>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     totalScrobbles: { type: Number, required: true, default: 0 },
     totalMinutes: { type: Number, required: true, default: 0 },
     uniqueArtistsCount: { type: Number, required: true, default: 0 },

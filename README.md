@@ -1,6 +1,6 @@
-# Spotify decided to fuck devs , changed his policy for API, and this project goes to unfinished list. 
+# Spotify decided to fuck devs , changed the policy for API (making only premium user can use API ) , and this project goes to unfinished list. 
 
-
+## i treid my best , even i made the most of the app but in react, i wanted it in jetpack compose .. but couldnt , hence ... bye bye 
 
 # 🎵 RateSangeet - Spotify Music Tracker
 

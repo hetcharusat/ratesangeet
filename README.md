@@ -1,3 +1,7 @@
+# Spotify decided to fuck devs , changed his policy for API, and this project goes to unfinished list. 
+
+
+
 # 🎵 RateSangeet - Spotify Music Tracker
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
